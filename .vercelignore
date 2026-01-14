@@ -1,0 +1,4 @@
+prisma.config.ts
+prisma/
+*.db
+*.db-journal
