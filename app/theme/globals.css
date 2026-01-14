@@ -4,18 +4,18 @@
 
 @layer base {
   :root {
-    --color-background: 255 255 255;
-    --color-foreground: 10 10 10;
-    --color-primary: 37 99 235;
-    --color-primary-foreground: 255 255 255;
-    --color-secondary: 241 245 249;
-    --color-secondary-foreground: 15 23 42;
-    --color-muted: 248 250 252;
-    --color-muted-foreground: 100 116 139;
-    --color-border: 226 232 240;
-    --color-input: 241 245 249;
-    --color-card: 255 255 255;
-    --color-card-foreground: 10 10 10;
+    --color-background: rgb(255, 255, 255);
+    --color-foreground: rgb(10, 10, 10);
+    --color-primary: rgb(37, 99, 235);
+    --color-primary-foreground: rgb(255, 255, 255);
+    --color-secondary: rgb(241, 245, 249);
+    --color-secondary-foreground: rgb(15, 23, 42);
+    --color-muted: rgb(248, 250, 252);
+    --color-muted-foreground: rgb(100, 116, 139);
+    --color-border: rgb(226, 232, 240);
+    --color-input: rgb(241, 245, 249);
+    --color-card: rgb(255, 255, 255);
+    --color-card-foreground: rgb(10, 10, 10);
     
     --radius-sm: 0.25rem;
     --radius-md: 0.5rem;
