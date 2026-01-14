@@ -71,9 +71,11 @@ export interface AddWordRequest {
 }
 
 export interface AddWordResponse {
-    status: 'created' | 'updated'
+    status: 'added' | 'exists' | 'updated'
+    message: string
     key: string
     finalWord: string
     lang: 'pt' | 'en'
     pos: 'verb' | 'noun' | 'adjective' | 'other'
+    pageId: string
 }

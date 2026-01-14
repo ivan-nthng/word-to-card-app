@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { PageHeader } from '@/app/ui/PageHeader'
 import { Input } from '@/app/ui/Input'
 import { Button } from '@/app/ui/Button'
@@ -13,11 +14,13 @@ export default function AddWordPage() {
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState('')
     const [result, setResult] = useState<{
-        status: 'created' | 'updated'
+        status: 'added' | 'exists' | 'updated'
+        message: string
         key: string
         finalWord: string
         lang: 'pt' | 'en'
         pos: 'verb' | 'noun' | 'adjective' | 'other'
+        pageId: string
     } | null>(null)
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -28,11 +31,13 @@ export default function AddWordPage() {
 
         try {
             const data = await apiFetch<{
-                status: 'created' | 'updated'
+                status: 'added' | 'exists' | 'updated'
+                message: string
                 key: string
                 finalWord: string
                 lang: 'pt' | 'en'
                 pos: 'verb' | 'noun' | 'adjective' | 'other'
+                pageId: string
             }>('/api/add-word', {
                 method: 'POST',
                 body: JSON.stringify({
@@ -53,7 +58,12 @@ export default function AddWordPage() {
 
     return (
         <div className="max-w-2xl mx-auto px-4 py-8">
-            <PageHeader title="Add Word" />
+            <div className="flex items-center justify-between mb-6">
+                <h1 className="text-2xl font-bold text-foreground">Add Word</h1>
+                <Link href="/app/words">
+                    <Button variant="outline">View Words</Button>
+                </Link>
+            </div>
 
             <Card className="mb-6">
                 <form onSubmit={handleSubmit} className="space-y-4">
@@ -98,13 +108,31 @@ export default function AddWordPage() {
             </Card>
 
             {result && (
-                <Card className="bg-success-background border-success-border">
-                    <h3 className="font-semibold text-success-text mb-2">
-                        Word{' '}
-                        {result.status === 'created' ? 'Created' : 'Updated'}{' '}
-                        Successfully
+                <Card
+                    className={
+                        result.status === 'exists'
+                            ? 'bg-muted border-border'
+                            : result.status === 'updated'
+                            ? 'bg-success-background border-success-border'
+                            : 'bg-success-background border-success-border'
+                    }
+                >
+                    <h3
+                        className={`font-semibold mb-2 ${
+                            result.status === 'exists'
+                                ? 'text-foreground'
+                                : 'text-success-text'
+                        }`}
+                    >
+                        {result.message}
                     </h3>
-                    <div className="space-y-1 text-sm text-success-text">
+                    <div
+                        className={`space-y-1 text-sm ${
+                            result.status === 'exists'
+                                ? 'text-muted-foreground'
+                                : 'text-success-text'
+                        }`}
+                    >
                         <p>
                             <strong>Word:</strong> {result.finalWord}
                         </p>
@@ -114,9 +142,6 @@ export default function AddWordPage() {
                         </p>
                         <p>
                             <strong>Part of Speech:</strong> {result.pos}
-                        </p>
-                        <p>
-                            <strong>Key:</strong> {result.key}
                         </p>
                     </div>
                 </Card>

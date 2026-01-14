@@ -127,11 +127,43 @@ export async function validateNotionSchema(): Promise<void> {
     }
 }
 
-function buildKey(language: 'pt' | 'en', input: string): string {
-    return `${language}|${input.trim().toLowerCase()}`
+/**
+ * Normalizes a word for deduplication purposes.
+ * - Lower-cases
+ * - Trims whitespace
+ * - Collapses multiple spaces to single
+ * - Removes trailing punctuation (.,!?)
+ * - Keeps diacritics (does not strip accents)
+ */
+function normalizeWordKey(word: string): string {
+    return word
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, ' ') // Collapse multiple spaces
+        .replace(/[.,!?]+$/, '') // Remove trailing punctuation
+        .trim()
 }
 
-function mapLanguage(lang: 'pt' | 'en'): 'Portuguese' | 'English' {
+/**
+ * Creates a deduplication key from word title and language.
+ * Format: "Portuguese:normalized_word" or "English:normalized_word"
+ */
+function makeDedupKey(
+    wordTitle: string,
+    language: 'Portuguese' | 'English',
+): string {
+    return `${language}:${normalizeWordKey(wordTitle)}`
+}
+
+/**
+ * Builds a deduplication key in format: "pt|word" or "en|word"
+ * Uses normalized word (lowercase, trimmed) for consistency
+ */
+function buildKey(language: 'pt' | 'en', input: string): string {
+    return `${language}|${normalizeWordKey(input)}`
+}
+
+export function mapLanguage(lang: 'pt' | 'en'): 'Portuguese' | 'English' {
     return lang === 'pt' ? 'Portuguese' : 'English'
 }
 
@@ -204,6 +236,81 @@ export async function findWordByKey(key: string): Promise<any | null> {
     }
 
     return response.results[0]
+}
+
+/**
+ * Finds a word by normalized word title and language.
+ * First tries to find by Key property (preferred).
+ * Falls back to searching by Title and Language if Key doesn't exist (migration safety).
+ */
+export async function findWordByDedupKey(
+    normalizedWordTitle: string,
+    language: 'Portuguese' | 'English',
+): Promise<any | null> {
+    // Convert language name to code for key format (pt|word or en|word)
+    const langCode = language === 'Portuguese' ? 'pt' : 'en'
+    const dedupKey = buildKey(langCode, normalizedWordTitle)
+    logger.info('ADD_WORD', `Searching for word with dedupKey: "${dedupKey}"`)
+
+    // Try Key-based search first (preferred method)
+    const byKey = await findWordByKey(dedupKey)
+    if (byKey) {
+        logger.info('ADD_WORD', `Found existing word by Key`, {
+            pageId: byKey.id,
+            dedupKey,
+        })
+        return byKey
+    }
+
+    // Fallback: search by Title and Language (for migration safety)
+    logger.info(
+        'ADD_WORD',
+        'Key search failed, trying fallback by Title+Language',
+    )
+    const notion = getNotion()
+    const normalizedSearch = normalizeWordKey(normalizedWordTitle)
+
+    const response = await retryNotionCall(() =>
+        notion.databases.query({
+            database_id: getDatabaseId(),
+            filter: {
+                and: [
+                    {
+                        property: 'Language',
+                        select: {
+                            equals: language,
+                        },
+                    },
+                ],
+            },
+            page_size: 100, // Get multiple to compare normalized titles
+        }),
+    )
+
+    // Find exact match by comparing normalized titles
+    for (const page of response.results) {
+        // Type guard: ensure page has properties
+        if ('properties' in page && page.properties) {
+            const pageTitle =
+                (page.properties as any).Word?.title?.[0]?.plain_text || ''
+            const pageNormalized = normalizeWordKey(pageTitle)
+            if (pageNormalized === normalizedSearch) {
+                logger.info(
+                    'ADD_WORD',
+                    `Found existing word by Title+Language (fallback)`,
+                    {
+                        pageId: page.id,
+                        originalTitle: pageTitle,
+                        normalizedTitle: pageNormalized,
+                    },
+                )
+                return page
+            }
+        }
+    }
+
+    logger.info('ADD_WORD', 'No existing word found', { dedupKey })
+    return null
 }
 
 function mapVerbTenseToProperties(
@@ -381,6 +488,236 @@ export async function createWord(
     return response.id
 }
 
+/**
+ * Checks if a Notion property value is empty.
+ * Empty definitions:
+ * - Rich text: empty array OR only whitespace
+ * - Select: null
+ * - Multi-select: empty array
+ * - Checkbox: false is NOT empty (treat as real value)
+ */
+function isPropertyEmpty(property: any): boolean {
+    if (!property) return true
+
+    // Rich text
+    if (property.rich_text) {
+        const text = property.rich_text?.[0]?.plain_text || ''
+        return text.trim() === ''
+    }
+
+    // Select
+    if (property.select !== undefined) {
+        return property.select === null
+    }
+
+    // Multi-select
+    if (property.multi_select !== undefined) {
+        return !property.multi_select || property.multi_select.length === 0
+    }
+
+    // Checkbox: false is NOT empty (do not override)
+    if (property.checkbox !== undefined) {
+        return false // Never treat checkbox as empty
+    }
+
+    // Title (should never be empty, but check anyway)
+    if (property.title) {
+        const text = property.title?.[0]?.plain_text || ''
+        return text.trim() === ''
+    }
+
+    return true
+}
+
+/**
+ * Updates a word, but only fills fields that are currently empty.
+ * Never overwrites non-empty values.
+ * Returns list of fields that were updated.
+ */
+export async function updateWordOnlyEmptyFields(
+    pageId: string,
+    language: 'pt' | 'en',
+    openaiResponse: OpenAIResponse,
+): Promise<string[]> {
+    const notion = getNotion()
+    const page = await retryNotionCall(() =>
+        notion.pages.retrieve({ page_id: pageId }),
+    )
+    const props = (page as any).properties
+    const currentLanguage = props.Language?.select?.name
+    const currentTypo = props.Typo?.select?.name
+    const isPortugueseVerb =
+        currentLanguage === 'Portuguese' && currentTypo === 'Verbo'
+
+    const updatedFields: string[] = []
+    const properties: any = {}
+
+    // Translation - only update if empty
+    if (isPropertyEmpty(props.Translation)) {
+        properties.Translation = {
+            rich_text: [
+                {
+                    text: {
+                        content: openaiResponse.translation_ru || '',
+                    },
+                },
+            ],
+        }
+        updatedFields.push('Translation')
+    }
+
+    // Verb forms - only for Portuguese verbs
+    if (isPortugueseVerb && openaiResponse.verb) {
+        // Presente
+        if (openaiResponse.verb.presente) {
+            const presente = openaiResponse.verb.presente
+
+            if (presente.eu && isPropertyEmpty(props.eu)) {
+                properties.eu = {
+                    rich_text: [{ text: { content: presente.eu } }],
+                }
+                updatedFields.push('eu')
+            }
+
+            if (isPropertyEmpty(props.Voce) && presente.voce) {
+                properties.Voce = {
+                    rich_text: [{ text: { content: presente.voce } }],
+                }
+                updatedFields.push('Voce')
+            }
+
+            if (isPropertyEmpty(props['ele/ela']) && presente.ele_ela) {
+                properties['ele/ela'] = {
+                    rich_text: [{ text: { content: presente.ele_ela } }],
+                }
+                updatedFields.push('ele/ela')
+            }
+
+            if (isPropertyEmpty(props['eles/elas']) && presente.eles_elas) {
+                properties['eles/elas'] = {
+                    rich_text: [{ text: { content: presente.eles_elas } }],
+                }
+                updatedFields.push('eles/elas')
+            }
+
+            if (isPropertyEmpty(props.Nos) && presente.nos) {
+                properties.Nos = {
+                    rich_text: [{ text: { content: presente.nos } }],
+                }
+                updatedFields.push('Nos')
+            }
+        }
+
+        // Pretérito Perfeito
+        if (openaiResponse.verb.preterito_perfeito) {
+            const perfeito = openaiResponse.verb.preterito_perfeito
+
+            if (perfeito.eu && isPropertyEmpty(props.Perfeito_eu)) {
+                properties.Perfeito_eu = {
+                    rich_text: [{ text: { content: perfeito.eu } }],
+                }
+                updatedFields.push('Perfeito_eu')
+            }
+
+            if (isPropertyEmpty(props.Perfeito_voce) && perfeito.voce) {
+                properties.Perfeito_voce = {
+                    rich_text: [{ text: { content: perfeito.voce } }],
+                }
+                updatedFields.push('Perfeito_voce')
+            }
+
+            if (
+                isPropertyEmpty(props['Perfeito_ele/ela']) &&
+                perfeito.ele_ela
+            ) {
+                properties['Perfeito_ele/ela'] = {
+                    rich_text: [{ text: { content: perfeito.ele_ela } }],
+                }
+                updatedFields.push('Perfeito_ele/ela')
+            }
+
+            if (
+                isPropertyEmpty(props['Perfeito_eles/elas']) &&
+                perfeito.eles_elas
+            ) {
+                properties['Perfeito_eles/elas'] = {
+                    rich_text: [{ text: { content: perfeito.eles_elas } }],
+                }
+                updatedFields.push('Perfeito_eles/elas')
+            }
+
+            if (isPropertyEmpty(props.Perfeito_nos) && perfeito.nos) {
+                properties.Perfeito_nos = {
+                    rich_text: [{ text: { content: perfeito.nos } }],
+                }
+                updatedFields.push('Perfeito_nos')
+            }
+        }
+
+        // Pretérito Imperfeito
+        if (openaiResponse.verb.preterito_imperfeito) {
+            const imperfeito = openaiResponse.verb.preterito_imperfeito
+
+            if (imperfeito.eu && isPropertyEmpty(props.Imperfeito_eu)) {
+                properties.Imperfeito_eu = {
+                    rich_text: [{ text: { content: imperfeito.eu } }],
+                }
+                updatedFields.push('Imperfeito_eu')
+            }
+
+            if (isPropertyEmpty(props.Imperfeito_voce) && imperfeito.voce) {
+                properties.Imperfeito_voce = {
+                    rich_text: [{ text: { content: imperfeito.voce } }],
+                }
+                updatedFields.push('Imperfeito_voce')
+            }
+
+            if (
+                isPropertyEmpty(props['Imperfeito_ele/ela']) &&
+                imperfeito.ele_ela
+            ) {
+                properties['Imperfeito_ele/ela'] = {
+                    rich_text: [{ text: { content: imperfeito.ele_ela } }],
+                }
+                updatedFields.push('Imperfeito_ele/ela')
+            }
+
+            if (
+                isPropertyEmpty(props['Imperfeito_eles/elas']) &&
+                imperfeito.eles_elas
+            ) {
+                properties['Imperfeito_eles/elas'] = {
+                    rich_text: [{ text: { content: imperfeito.eles_elas } }],
+                }
+                updatedFields.push('Imperfeito_eles/elas')
+            }
+
+            if (isPropertyEmpty(props.Imperfeito_nos) && imperfeito.nos) {
+                properties.Imperfeito_nos = {
+                    rich_text: [{ text: { content: imperfeito.nos } }],
+                }
+                updatedFields.push('Imperfeito_nos')
+            }
+        }
+    }
+
+    // Only update if there are fields to update
+    if (Object.keys(properties).length > 0) {
+        await retryNotionCall(() =>
+            notion.pages.update({
+                page_id: pageId,
+                properties,
+            }),
+        )
+    }
+
+    return updatedFields
+}
+
+/**
+ * Legacy updateWord function - always overwrites (for backward compatibility).
+ * @deprecated Use updateWordOnlyEmptyFields for new code
+ */
 export async function updateWord(
     pageId: string,
     language: 'pt' | 'en',

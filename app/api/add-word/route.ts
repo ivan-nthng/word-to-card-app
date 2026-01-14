@@ -4,10 +4,11 @@ import { AUTH_ENABLED } from '@/lib/config'
 import { analyzeWord } from '@/lib/openai'
 import {
     buildKey,
-    findWordByKey,
+    findWordByDedupKey,
     createWord,
-    updateWord,
+    updateWordOnlyEmptyFields,
     validateNotionSchema,
+    mapLanguage,
 } from '@/lib/notion'
 import { AddWordRequest, AddWordResponse } from '@/lib/types'
 import { logger } from '@/lib/logger'
@@ -136,84 +137,139 @@ export async function POST(request: NextRequest) {
             wasCorrected: corrected,
         })
 
-        const key = buildKey(finalLanguage, finalWord)
-        logger.info('ADD_WORD', 'Compute lang/key', {
+        // Compute deduplication key using normalized word title and language
+        const languageName = mapLanguage(finalLanguage)
+        const dedupKey = buildKey(finalLanguage, finalWord)
+        logger.info('ADD_WORD', 'Compute dedupKey', {
             traceId,
             finalLanguage,
-            key,
+            languageName,
+            dedupKey,
             finalWord,
         })
 
         // Step 5: Notion - before query
         step = 'notion_query_before'
-        logger.info('ADD_WORD', `Notion query before - key: "${key}"`, {
-            traceId,
-        })
+        logger.info(
+            'ADD_WORD',
+            `Notion query before - dedupKey: "${dedupKey}"`,
+            {
+                traceId,
+            },
+        )
 
-        const existingWord = await findWordByKey(key)
+        // Search for existing word using normalized title + language
+        const existingWord = await findWordByDedupKey(finalWord, languageName)
 
         // Step 6: Notion - after query
         step = 'notion_query_after'
         if (existingWord) {
-            logger.info('ADD_WORD', 'Notion query after - found: true', {
-                traceId,
-                pageId: existingWord.id,
-            })
+            logger.info(
+                'ADD_WORD',
+                'Notion query after - foundExisting: true',
+                {
+                    traceId,
+                    pageId: existingWord.id,
+                    dedupKey,
+                },
+            )
         } else {
-            logger.info('ADD_WORD', 'Notion query after - found: false', {
-                traceId,
-            })
+            logger.info(
+                'ADD_WORD',
+                'Notion query after - foundExisting: false',
+                {
+                    traceId,
+                    dedupKey,
+                },
+            )
         }
 
         // Step 7: Notion - before create/update
         step = 'notion_write_before'
-        let status: 'created' | 'updated'
+        let status: 'added' | 'exists' | 'updated'
+        let message: string
         let pageId: string
-        const operation = existingWord ? 'update' : 'create'
-        const propertyNames = ['Word', 'Key', 'Language', 'Typo', 'Translation']
-        if (finalLanguage === 'pt' && openaiResponse.pos === 'verb') {
-            propertyNames.push('Voce', 'ele/ela', 'eles/elas', 'Nos')
-        }
-        logger.info('ADD_WORD', `Notion ${operation} before`, {
-            traceId,
-            properties: propertyNames,
-        })
+        let updatedFields: string[] = []
 
         if (existingWord) {
-            await updateWord(existingWord.id, finalLanguage, openaiResponse)
-            status = 'updated'
+            // Word exists - check if we need to update empty fields
+            logger.info('ADD_WORD', 'Word exists, checking for empty fields', {
+                traceId,
+                pageId: existingWord.id,
+            })
+
+            updatedFields = await updateWordOnlyEmptyFields(
+                existingWord.id,
+                finalLanguage,
+                openaiResponse,
+            )
+
             pageId = existingWord.id
+
+            if (updatedFields.length > 0) {
+                status = 'updated'
+                message = 'Word exists — missing fields were updated'
+                logger.info('ADD_WORD', 'Action: updated', {
+                    traceId,
+                    pageId,
+                    updatedFields,
+                })
+            } else {
+                status = 'exists'
+                message = 'Word already exists'
+                logger.info('ADD_WORD', 'Action: skipped (all fields filled)', {
+                    traceId,
+                    pageId,
+                })
+            }
         } else {
+            // Word doesn't exist - create it
+            logger.info('ADD_WORD', 'Creating new word', {
+                traceId,
+                dedupKey,
+            })
+
             pageId = await createWord(
-                key,
+                dedupKey,
                 finalWord,
                 finalLanguage,
                 openaiResponse,
             )
-            status = 'created'
+            status = 'added'
+            message = 'Word added'
+            logger.info('ADD_WORD', 'Action: created', {
+                traceId,
+                pageId,
+                dedupKey,
+            })
         }
 
         // Step 8: Notion - after create/update
         step = 'notion_write_after'
-        logger.info('ADD_WORD', `Notion ${operation} after - status: ok`, {
+        logger.info('ADD_WORD', `Notion operation after - status: ${status}`, {
             traceId,
             pageId,
+            updatedFields: updatedFields.length > 0 ? updatedFields : undefined,
         })
 
         const response: AddWordResponse = {
             status,
-            key,
+            message,
+            key: dedupKey,
             finalWord,
             lang: finalLanguage,
             pos: openaiResponse.pos,
+            pageId,
         }
 
         logger.info('ADD_WORD', 'Success', {
             traceId,
             status,
-            key,
+            dedupKey,
+            pageId,
             lang: finalLanguage,
             pos: openaiResponse.pos,
+            updatedFields: updatedFields.length > 0 ? updatedFields : undefined,
         })
 
         return NextResponse.json(response)
@@ -236,13 +292,22 @@ export async function POST(request: NextRequest) {
         ) {
             errorMessage =
                 'Network error: Unable to connect to Notion. Please try again in a moment.'
-        } else if (errorMessage.includes('rate_limit') || errorMessage.includes('429')) {
+        } else if (
+            errorMessage.includes('rate_limit') ||
+            errorMessage.includes('429')
+        ) {
             errorMessage =
                 'Rate limit exceeded. Please wait a moment and try again.'
-        } else if (errorMessage.includes('unauthorized') || errorMessage.includes('401')) {
+        } else if (
+            errorMessage.includes('unauthorized') ||
+            errorMessage.includes('401')
+        ) {
             errorMessage =
                 'Authentication error: Please check your Notion token in environment variables.'
-        } else if (errorMessage.includes('not found') || errorMessage.includes('404')) {
+        } else if (
+            errorMessage.includes('not found') ||
+            errorMessage.includes('404')
+        ) {
             errorMessage =
                 'Notion database not found. Please check your database ID in environment variables.'
         }
