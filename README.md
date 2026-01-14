@@ -1,5 +1,6 @@
 # WordTo - Private Vocabulary Web Service
 
+
 A Next.js application for managing vocabulary words with Notion as the source of truth and OpenAI for linguistic analysis.
 
 ## Features
