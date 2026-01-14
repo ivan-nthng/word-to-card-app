@@ -1,12 +1,64 @@
 import { Client } from '@notionhq/client'
 import { OpenAIResponse } from './types'
 import { NotionWord } from './types'
+import { NOTION_TOKEN, NOTION_DATABASE_ID } from './env'
 
 const notion = new Client({
-  auth: process.env.NOTION_TOKEN,
+  auth: NOTION_TOKEN,
 })
 
-const DATABASE_ID = process.env.NOTION_DATABASE_ID!
+const DATABASE_ID = NOTION_DATABASE_ID
+
+// Required Notion properties
+const REQUIRED_PROPERTIES = [
+  'Word',
+  'Translation',
+  'Typo',
+  'Language',
+  'Key',
+  'Voce',
+  'ele/ela',
+  'eles/elas',
+  'Nos',
+]
+
+// Schema validation cache
+let schemaValidated = false
+let schemaValidationError: Error | null = null
+
+export async function validateNotionSchema(): Promise<void> {
+  if (schemaValidated) {
+    if (schemaValidationError) {
+      throw schemaValidationError
+    }
+    return
+  }
+
+  try {
+    const database = await notion.databases.retrieve({ database_id: DATABASE_ID })
+    const properties = (database as any).properties
+    const propertyNames = Object.keys(properties)
+
+    for (const requiredProp of REQUIRED_PROPERTIES) {
+      if (!propertyNames.includes(requiredProp)) {
+        const error = new Error(`Notion property "${requiredProp}" not found. Check database schema.`)
+        schemaValidationError = error
+        schemaValidated = true
+        throw error
+      }
+    }
+
+    schemaValidated = true
+  } catch (error: any) {
+    if (error.message?.includes('Notion property')) {
+      schemaValidationError = error
+      schemaValidated = true
+      throw error
+    }
+    // If it's a different error (network, auth, etc.), don't cache it
+    throw error
+  }
+}
 
 function buildKey(language: 'pt' | 'en', input: string): string {
   return `${language}|${input.trim().toLowerCase()}`
@@ -21,16 +73,6 @@ function mapTypo(pos: string): 'Verbo' | 'substantivo' | 'Adjetivo' {
   if (pos === 'noun') return 'substantivo'
   if (pos === 'adjective') return 'Adjetivo'
   return 'substantivo'
-}
-
-function getFinalWord(openaiResponse: OpenAIResponse, rawInput: string): string {
-  if (openaiResponse.pos === 'verb' && openaiResponse.normalized.infinitive) {
-    return openaiResponse.normalized.infinitive
-  }
-  if (openaiResponse.normalized.lemma) {
-    return openaiResponse.normalized.lemma
-  }
-  return rawInput.trim()
 }
 
 function notionToWord(page: any): NotionWord {
@@ -78,8 +120,7 @@ export async function createWord(
   key: string,
   finalWord: string,
   language: 'pt' | 'en',
-  openaiResponse: OpenAIResponse,
-  context?: string
+  openaiResponse: OpenAIResponse
 ): Promise<string> {
   const isPortugueseVerb = language === 'pt' && openaiResponse.pos === 'verb'
 
@@ -123,18 +164,6 @@ export async function createWord(
     },
   }
 
-  if (context) {
-    properties.Context = {
-      rich_text: [
-        {
-          text: {
-            content: context,
-          },
-        },
-      ],
-    }
-  }
-
   if (isPortugueseVerb && openaiResponse.verb?.presente) {
     const presente = openaiResponse.verb.presente
     properties.Voce = {
@@ -163,8 +192,8 @@ export async function createWord(
 
 export async function updateWord(
   pageId: string,
-  openaiResponse: OpenAIResponse,
-  context?: string
+  language: 'pt' | 'en',
+  openaiResponse: OpenAIResponse
 ): Promise<void> {
   const page = await notion.pages.retrieve({ page_id: pageId })
   const props = (page as any).properties
@@ -182,20 +211,6 @@ export async function updateWord(
         },
       ],
     },
-  }
-
-  if (context !== undefined) {
-    properties.Context = {
-      rich_text: context
-        ? [
-            {
-              text: {
-                content: context,
-              },
-            },
-          ]
-        : [],
-    }
   }
 
   if (isPortugueseVerb && openaiResponse.verb?.presente) {

@@ -1,6 +1,7 @@
 import { getServerSession } from 'next-auth/next'
 import { NextAuthOptions } from 'next-auth'
 import GoogleProvider from 'next-auth/providers/google'
+import { AUTH_ENABLED } from './config'
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -25,5 +26,15 @@ export const authOptions: NextAuthOptions = {
 }
 
 export async function getSession() {
+  // When AUTH_ENABLED is false, return a mock session to bypass auth checks
+  if (!AUTH_ENABLED) {
+    return {
+      user: {
+        name: 'Test User',
+        email: 'test@example.com',
+      },
+      expires: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+    }
+  }
   return await getServerSession(authOptions)
 }

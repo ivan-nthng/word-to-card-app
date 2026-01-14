@@ -1,8 +1,9 @@
 import OpenAI from 'openai'
 import { OpenAIResponse } from './types'
+import { OPENAI_API_KEY } from './env'
 
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: OPENAI_API_KEY,
 })
 
 const SYSTEM_PROMPT = `You are a linguistic analysis tool. Analyze the input word and return ONLY a valid JSON object with the exact structure specified. Do not include any explanations, markdown formatting, or additional text. Return pure JSON only.`

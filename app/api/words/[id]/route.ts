@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
+import { AUTH_ENABLED } from '@/lib/config'
 import { getWordById } from '@/lib/notion'
 
 export async function GET(
@@ -7,9 +8,12 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
-    const session = await getSession()
-    if (!session) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // Skip auth check when AUTH_ENABLED is false
+    if (AUTH_ENABLED) {
+      const session = await getSession()
+      if (!session) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      }
     }
 
     const word = await getWordById(params.id)
