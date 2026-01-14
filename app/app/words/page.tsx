@@ -101,7 +101,9 @@ export default function WordsPage() {
             const url = `/api/words?${params.toString()}`
             const response = await fetch(url)
             if (!response.ok) {
-                throw new Error('Failed to fetch words')
+                const errorData = await response.json().catch(() => ({}))
+                const errorMessage = errorData.error || `Failed to fetch words (${response.status})`
+                throw new Error(errorMessage)
             }
             const data = await response.json()
             setWords(data)

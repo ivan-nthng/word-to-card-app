@@ -29,8 +29,16 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(words)
   } catch (error: any) {
     console.error('[WORDS] Error fetching words:', error)
+    const errorMessage = error.message || 'Internal server error'
+    // Provide more specific error messages
+    if (errorMessage.includes('Missing required environment variable')) {
+      return NextResponse.json(
+        { error: 'Server configuration error: Missing environment variables. Please check Vercel settings.' },
+        { status: 500 }
+      )
+    }
     return NextResponse.json(
-      { error: error.message || 'Internal server error' },
+      { error: errorMessage },
       { status: 500 }
     )
   }
