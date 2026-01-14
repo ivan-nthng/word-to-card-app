@@ -15,8 +15,9 @@ const USER_PROMPT_TEMPLATE = (word: string) => `Analyze the word "${word}" and r
   "normalized": { "lemma": "", "infinitive": "" },
   "translation_ru": "",
   "verb": {
-    "presente": { "voce": "", "ele_ela": "", "eles_elas": "", "nos": "" },
-    "preterito_perfeito": { "voce": "", "ele_ela": "", "eles_elas": "", "nos": "" },
+    "presente": { "eu": "", "voce": "", "ele_ela": "", "eles_elas": "", "nos": "" },
+    "preterito_perfeito": { "eu": "", "voce": "", "ele_ela": "", "eles_elas": "", "nos": "" },
+    "preterito_imperfeito": { "eu": "", "voce": "", "ele_ela": "", "eles_elas": "", "nos": "" },
     "futuro_do_presente": { "voce": "", "ele_ela": "", "eles_elas": "", "nos": "" }
   },
   "confidence": 0.0

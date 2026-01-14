@@ -8,12 +8,21 @@ export interface OpenAIResponse {
 	translation_ru: string;
 	verb: {
 		presente: {
+			eu?: string;
 			voce: string;
 			ele_ela: string;
 			eles_elas: string;
 			nos: string;
 		};
 		preterito_perfeito: {
+			eu?: string;
+			voce: string;
+			ele_ela: string;
+			eles_elas: string;
+			nos: string;
+		};
+		preterito_imperfeito?: {
+			eu?: string;
 			voce: string;
 			ele_ela: string;
 			eles_elas: string;

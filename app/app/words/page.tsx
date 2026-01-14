@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { PageHeader } from '@/app/ui/PageHeader'
 import { Input } from '@/app/ui/Input'
@@ -10,7 +9,6 @@ import { Tag } from '@/app/ui/Tag'
 import { NotionWord } from '@/lib/types'
 
 export default function WordsPage() {
-  const router = useRouter()
   const [words, setWords] = useState<NotionWord[]>([])
   const [filteredWords, setFilteredWords] = useState<NotionWord[]>([])
   const [search, setSearch] = useState('')
@@ -43,9 +41,11 @@ export default function WordsPage() {
         throw new Error('Failed to fetch words')
       }
       const data = await response.json()
+      console.log('[WordsPage] Fetched words:', data.length)
       setWords(data)
       setFilteredWords(data)
     } catch (err: any) {
+      console.error('[WordsPage] Error fetching words:', err)
       setError(err.message || 'An error occurred')
     } finally {
       setLoading(false)
