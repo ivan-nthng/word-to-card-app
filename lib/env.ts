@@ -3,22 +3,22 @@
 // This allows the build to succeed even if env vars aren't available during build
 
 function requireEnv(name: string): string {
-  const value = process.env[name]
-  if (!value) {
-    throw new Error(`Missing required environment variable: ${name}`)
-  }
-  return value
+    const value = process.env[name]
+    if (!value) {
+        throw new Error(`Missing required environment variable: ${name}`)
+    }
+    return value
 }
 
 // Lazy getters - only validate when accessed, not at module load time
 function createEnvGetter(name: string): () => string {
-  let cached: string | undefined
-  return () => {
-    if (cached === undefined) {
-      cached = requireEnv(name)
+    let cached: string | undefined
+    return () => {
+        if (cached === undefined) {
+            cached = requireEnv(name)
+        }
+        return cached
     }
-    return cached
-  }
 }
 
 export const getOpenAIApiKey = createEnvGetter('OPENAI_API_KEY')
