@@ -2,6 +2,8 @@ import { getSession } from '@/lib/auth'
 import { redirect } from 'next/navigation'
 import { AUTH_ENABLED } from '@/lib/config'
 
+export const dynamic = 'force-dynamic'
+
 export default async function AppLayout({
   children,
 }: {
@@ -9,10 +11,15 @@ export default async function AppLayout({
 }) {
   // Skip auth check when AUTH_ENABLED is false
   if (AUTH_ENABLED) {
-    const session = await getSession()
+    try {
+      const session = await getSession()
 
-    if (!session) {
-      redirect('/')
+      if (!session) {
+        redirect('/')
+      }
+    } catch (error) {
+      // If auth check fails, allow access (graceful degradation)
+      console.error('Error checking session in AppLayout:', error)
     }
   }
 

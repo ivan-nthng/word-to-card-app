@@ -12,19 +12,33 @@ import {
 import { AddWordRequest, AddWordResponse } from '@/lib/types'
 import { randomUUID } from 'crypto'
 
-// Validate schema once on module load
+export const dynamic = 'force-dynamic'
+
+// Validate schema once on first request (lazy validation)
 let schemaValidated = false
-if (!schemaValidated) {
-    validateNotionSchema().catch((err) => {
-        console.error(
-            '[ADD_WORD] Schema validation failed on startup:',
-            err.message,
-        )
-    })
-    schemaValidated = true
+let schemaValidationPromise: Promise<void> | null = null
+
+async function ensureSchemaValidated() {
+    if (schemaValidated) return
+    if (!schemaValidationPromise) {
+        schemaValidationPromise = validateNotionSchema()
+            .then(() => {
+                schemaValidated = true
+            })
+            .catch((err) => {
+                console.error(
+                    '[ADD_WORD] Schema validation failed:',
+                    err.message,
+                )
+                // Don't block requests if validation fails
+            })
+    }
+    await schemaValidationPromise
 }
 
 export async function POST(request: NextRequest) {
+    // Validate schema on first request, not at module load
+    await ensureSchemaValidated()
     const traceId = randomUUID()
     let step = 'start'
 

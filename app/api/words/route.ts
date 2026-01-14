@@ -1,9 +1,11 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { AUTH_ENABLED } from '@/lib/config'
-import { getLatestWords } from '@/lib/notion'
+import { getWords } from '@/lib/notion'
 
-export async function GET() {
+export const dynamic = 'force-dynamic'
+
+export async function GET(request: NextRequest) {
   try {
     // Skip auth check when AUTH_ENABLED is false
     if (AUTH_ENABLED) {
@@ -13,10 +15,20 @@ export async function GET() {
       }
     }
 
-    const words = await getLatestWords(50)
+    const searchParams = request.nextUrl.searchParams
+    const typo = searchParams.get('typo') || undefined
+    const language = searchParams.get('language') || undefined
+    const search = searchParams.get('search') || undefined
+
+    const words = await getWords({
+      typo: typo || undefined,
+      language: language || undefined,
+      search: search || undefined,
+    })
+
     return NextResponse.json(words)
   } catch (error: any) {
-    console.error('Error fetching words:', error)
+    console.error('[WORDS] Error fetching words:', error)
     return NextResponse.json(
       { error: error.message || 'Internal server error' },
       { status: 500 }

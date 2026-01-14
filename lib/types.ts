@@ -43,13 +43,26 @@ export interface NotionWord {
     word: string
     translation: string
     context: string
+    eu: string
     voce: string
     eleEla: string
     elesElas: string
     nos: string
+    Perfeito_eu: string
+    Perfeito_voce: string
+    Perfeito_eleEla: string
+    Perfeito_elesElas: string
+    Perfeito_nos: string
+    Imperfeito_eu: string
+    Imperfeito_voce: string
+    Imperfeito_eleEla: string
+    Imperfeito_elesElas: string
+    Imperfeito_nos: string
     typo: 'Verbo' | 'substantivo' | 'Adjetivo'
     language: 'Portuguese' | 'English'
     key: string
+    learned: boolean
+    decks: string[]
 }
 
 export interface AddWordRequest {

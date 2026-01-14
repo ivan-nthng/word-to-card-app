@@ -4,13 +4,20 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from './ui/Button'
 
+export const dynamic = 'force-dynamic'
+
 export default async function Home() {
-  // When auth is enabled, redirect signed-in users
-  if (AUTH_ENABLED) {
-    const session = await getSession()
-    if (session) {
-      redirect('/app/add')
+  try {
+    // When auth is enabled, redirect signed-in users
+    if (AUTH_ENABLED) {
+      const session = await getSession()
+      if (session) {
+        redirect('/app/add')
+      }
     }
+  } catch (error) {
+    // If auth check fails, continue to show the page
+    console.error('Error checking session:', error)
   }
 
   return (

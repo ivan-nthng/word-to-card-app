@@ -1,13 +1,27 @@
 import { Client } from '@notionhq/client'
 import { OpenAIResponse } from './types'
 import { NotionWord } from './types'
-import { NOTION_TOKEN, NOTION_DATABASE_ID } from './env'
+import { getNotionToken, getNotionDatabaseId } from './env'
 
-const notion = new Client({
-    auth: NOTION_TOKEN,
-})
+// Initialize Notion client lazily to avoid validation during build
+let notionInstance: Client | null = null
+let databaseIdCache: string | null = null
 
-const DATABASE_ID = NOTION_DATABASE_ID
+function getNotion(): Client {
+    if (!notionInstance) {
+        notionInstance = new Client({
+            auth: getNotionToken(),
+        })
+    }
+    return notionInstance
+}
+
+function getDatabaseId(): string {
+    if (!databaseIdCache) {
+        databaseIdCache = getNotionDatabaseId()
+    }
+    return databaseIdCache
+}
 
 // Required Notion properties
 const REQUIRED_PROPERTIES = [
@@ -35,8 +49,9 @@ export async function validateNotionSchema(): Promise<void> {
     }
 
     try {
+        const notion = getNotion()
         const database = await notion.databases.retrieve({
-            database_id: DATABASE_ID,
+            database_id: getDatabaseId(),
         })
         const properties = (database as any).properties
         const propertyNames = Object.keys(properties)
@@ -87,19 +102,38 @@ function notionToWord(page: any): NotionWord {
         word: props.Word?.title?.[0]?.plain_text || '',
         translation: props.Translation?.rich_text?.[0]?.plain_text || '',
         context: props.Context?.rich_text?.[0]?.plain_text || '',
+        eu: props.eu?.rich_text?.[0]?.plain_text || '',
         voce: props.Voce?.rich_text?.[0]?.plain_text || '',
         eleEla: props['ele/ela']?.rich_text?.[0]?.plain_text || '',
         elesElas: props['eles/elas']?.rich_text?.[0]?.plain_text || '',
         nos: props.Nos?.rich_text?.[0]?.plain_text || '',
+        Perfeito_eu: props.Perfeito_eu?.rich_text?.[0]?.plain_text || '',
+        Perfeito_voce: props.Perfeito_voce?.rich_text?.[0]?.plain_text || '',
+        Perfeito_eleEla:
+            props['Perfeito_ele/ela']?.rich_text?.[0]?.plain_text || '',
+        Perfeito_elesElas:
+            props['Perfeito_eles/elas']?.rich_text?.[0]?.plain_text || '',
+        Perfeito_nos: props.Perfeito_nos?.rich_text?.[0]?.plain_text || '',
+        Imperfeito_eu: props.Imperfeito_eu?.rich_text?.[0]?.plain_text || '',
+        Imperfeito_voce:
+            props.Imperfeito_voce?.rich_text?.[0]?.plain_text || '',
+        Imperfeito_eleEla:
+            props['Imperfeito_ele/ela']?.rich_text?.[0]?.plain_text || '',
+        Imperfeito_elesElas:
+            props['Imperfeito_eles/elas']?.rich_text?.[0]?.plain_text || '',
+        Imperfeito_nos: props.Imperfeito_nos?.rich_text?.[0]?.plain_text || '',
         typo: props.Typo?.select?.name || 'substantivo',
         language: props.Language?.select?.name || 'Portuguese',
         key: props.Key?.rich_text?.[0]?.plain_text || '',
+        learned: props.Learned?.checkbox || false,
+        decks: props.Deck?.multi_select?.map((item: any) => item.name) || [],
     }
 }
 
 export async function findWordByKey(key: string): Promise<any | null> {
+    const notion = getNotion()
     const response = await notion.databases.query({
-        database_id: DATABASE_ID,
+        database_id: getDatabaseId(),
         filter: {
             property: 'Key',
             rich_text: {
@@ -283,9 +317,10 @@ export async function createWord(
         }
     }
 
+    const notion = getNotion()
     const response = await notion.pages.create({
         parent: {
-            database_id: DATABASE_ID,
+            database_id: getDatabaseId(),
         },
         properties,
     })
@@ -298,6 +333,7 @@ export async function updateWord(
     language: 'pt' | 'en',
     openaiResponse: OpenAIResponse,
 ): Promise<void> {
+    const notion = getNotion()
     const page = await notion.pages.retrieve({ page_id: pageId })
     const props = (page as any).properties
     const currentLanguage = props.Language?.select?.name
@@ -411,8 +447,9 @@ export async function updateWord(
 export async function getLatestWords(
     limit: number = 50,
 ): Promise<NotionWord[]> {
+    const notion = getNotion()
     const response = await notion.databases.query({
-        database_id: DATABASE_ID,
+        database_id: getDatabaseId(),
         sorts: [
             {
                 timestamp: 'created_time',
@@ -425,12 +462,562 @@ export async function getLatestWords(
     return response.results.map(notionToWord)
 }
 
+export async function getWords(filters?: {
+    typo?: string
+    language?: string
+    search?: string
+}): Promise<NotionWord[]> {
+    console.log(`[WORDS] Fetching words with filters:`, filters)
+
+    try {
+        const filterConditions: any[] = []
+
+        if (filters?.typo && filters.typo !== 'All') {
+            filterConditions.push({
+                property: 'Typo',
+                select: {
+                    equals: filters.typo,
+                },
+            })
+        }
+
+        if (filters?.language && filters.language !== 'All') {
+            filterConditions.push({
+                property: 'Language',
+                select: {
+                    equals: filters.language,
+                },
+            })
+        }
+
+        // Note: Notion doesn't support full-text search on title easily
+        // We'll fetch all and filter client-side for MVP
+        const notion = getNotion()
+        const response = await notion.databases.query({
+            database_id: getDatabaseId(),
+            filter:
+                filterConditions.length > 0
+                    ? { and: filterConditions }
+                    : undefined,
+            sorts: [
+                {
+                    timestamp: 'created_time',
+                    direction: 'descending',
+                },
+            ],
+            page_size: 100, // Fetch more for search filtering
+        })
+
+        let words = response.results.map(notionToWord)
+
+        // Client-side search filtering
+        if (filters?.search) {
+            const searchLower = filters.search.toLowerCase()
+            words = words.filter(
+                (w) =>
+                    w.word.toLowerCase().includes(searchLower) ||
+                    w.translation.toLowerCase().includes(searchLower),
+            )
+        }
+
+        console.log(`[WORDS] Returning ${words.length} words`)
+        return words
+    } catch (error: any) {
+        console.error(`[WORDS] Error fetching words:`, error.message)
+        throw error
+    }
+}
+
+export async function getAllWords(): Promise<NotionWord[]> {
+    console.log(`[WORDS] Fetching all words`)
+
+    try {
+        const allWords: NotionWord[] = []
+        let cursor: string | undefined = undefined
+
+        do {
+            const notion = getNotion()
+            const response = await notion.databases.query({
+                database_id: getDatabaseId(),
+                start_cursor: cursor,
+                page_size: 100,
+            })
+
+            allWords.push(...response.results.map(notionToWord))
+            cursor = response.next_cursor || undefined
+        } while (cursor)
+
+        console.log(`[WORDS] Fetched ${allWords.length} total words`)
+        return allWords
+    } catch (error: any) {
+        console.error(`[WORDS] Error fetching all words:`, error.message)
+        throw error
+    }
+}
+
+export interface DeckSummary {
+    name: string
+    activeCount: number
+    learnedCount: number
+    totalCount: number
+}
+
+export async function getDeckSummary(): Promise<DeckSummary[]> {
+    console.log(`[DECK] Computing deck summary`)
+
+    try {
+        const allWords = await getAllWords()
+
+        // Build deck counts from all words
+        const deckMap = new Map<string, { active: number; learned: number }>()
+
+        for (const word of allWords) {
+            for (const deckName of word.decks) {
+                if (!deckMap.has(deckName)) {
+                    deckMap.set(deckName, { active: 0, learned: 0 })
+                }
+
+                const counts = deckMap.get(deckName)!
+                if (word.learned) {
+                    counts.learned++
+                } else {
+                    counts.active++
+                }
+            }
+        }
+
+        const summary: DeckSummary[] = Array.from(deckMap.entries()).map(
+            ([name, counts]) => ({
+                name,
+                activeCount: counts.active,
+                learnedCount: counts.learned,
+                totalCount: counts.active + counts.learned,
+            }),
+        )
+
+        // Sort by name
+        summary.sort((a, b) => a.name.localeCompare(b.name))
+
+        console.log(`[DECK] Found ${summary.length} decks`)
+        return summary
+    } catch (error: any) {
+        console.error(`[DECK] Error computing deck summary:`, error.message)
+        throw error
+    }
+}
+
+export async function getAllDeckWords(deckName: string): Promise<NotionWord[]> {
+    console.log(`[DECK] Querying all words for deck: "${deckName}"`)
+
+    try {
+        const notion = getNotion()
+        const response = await notion.databases.query({
+            database_id: getDatabaseId(),
+            filter: {
+                property: 'Deck',
+                multi_select: {
+                    contains: deckName,
+                },
+            },
+            sorts: [
+                {
+                    timestamp: 'created_time',
+                    direction: 'ascending',
+                },
+            ],
+        })
+
+        const words = response.results.map(notionToWord)
+        console.log(
+            `[DECK] Found ${words.length} total words in deck: "${deckName}"`,
+        )
+        return words
+    } catch (error: any) {
+        console.error(
+            `[DECK] Error querying all deck words "${deckName}":`,
+            error.message,
+        )
+        throw error
+    }
+}
+
 export async function getWordById(pageId: string): Promise<NotionWord | null> {
     try {
+        const notion = getNotion()
         const page = await notion.pages.retrieve({ page_id: pageId })
         return notionToWord(page as any)
     } catch (error) {
         return null
+    }
+}
+
+// Deck operations
+
+export async function addWordsToDeck(
+    pageIds: string[],
+    deckName: string,
+): Promise<void> {
+    console.log(`[DECK] Adding ${pageIds.length} words to deck: "${deckName}"`)
+
+    const notion = getNotion()
+    for (const pageId of pageIds) {
+        try {
+            // Get current page to read existing decks
+            const page = await notion.pages.retrieve({ page_id: pageId })
+            const props = (page as any).properties
+            const currentDecks =
+                props.Deck?.multi_select?.map((item: any) => item.name) || []
+
+            // Add deck name if not already present
+            if (!currentDecks.includes(deckName)) {
+                currentDecks.push(deckName)
+            }
+
+            // Update with new deck list
+            await notion.pages.update({
+                page_id: pageId,
+                properties: {
+                    Deck: {
+                        multi_select: currentDecks.map((name: string) => ({
+                            name,
+                        })),
+                    },
+                },
+            })
+
+            console.log(`[DECK] Added word ${pageId} to deck: "${deckName}"`)
+        } catch (error: any) {
+            console.error(
+                `[DECK] Error adding word ${pageId} to deck "${deckName}":`,
+                error.message,
+            )
+            throw error
+        }
+    }
+}
+
+export async function removeWordsFromDeck(
+    pageIds: string[],
+    deckName: string,
+): Promise<void> {
+    console.log(
+        `[DECK] Removing ${pageIds.length} words from deck: "${deckName}"`,
+    )
+
+    const notion = getNotion()
+    for (const pageId of pageIds) {
+        try {
+            // Get current page to read existing decks
+            const page = await notion.pages.retrieve({ page_id: pageId })
+            const props = (page as any).properties
+            const currentDecks =
+                props.Deck?.multi_select?.map((item: any) => item.name) || []
+
+            // Remove deck name
+            const updatedDecks = currentDecks.filter(
+                (name: string) => name !== deckName,
+            )
+
+            // Update with new deck list
+            await notion.pages.update({
+                page_id: pageId,
+                properties: {
+                    Deck: {
+                        multi_select: updatedDecks.map((name: string) => ({
+                            name,
+                        })),
+                    },
+                },
+            })
+
+            console.log(
+                `[DECK] Removed word ${pageId} from deck: "${deckName}"`,
+            )
+        } catch (error: any) {
+            console.error(
+                `[DECK] Error removing word ${pageId} from deck "${deckName}":`,
+                error.message,
+            )
+            throw error
+        }
+    }
+}
+
+export async function getDeckWords(deckName: string): Promise<NotionWord[]> {
+    console.log(`[DECK] Querying words for deck: "${deckName}"`)
+
+    try {
+        const notion = getNotion()
+        const response = await notion.databases.query({
+            database_id: getDatabaseId(),
+            filter: {
+                and: [
+                    {
+                        property: 'Deck',
+                        multi_select: {
+                            contains: deckName,
+                        },
+                    },
+                    {
+                        property: 'Learned',
+                        checkbox: {
+                            equals: false,
+                        },
+                    },
+                ],
+            },
+            sorts: [
+                {
+                    timestamp: 'created_time',
+                    direction: 'ascending',
+                },
+            ],
+        })
+
+        const words = response.results.map(notionToWord)
+        console.log(`[DECK] Found ${words.length} words in deck: "${deckName}"`)
+        return words
+    } catch (error: any) {
+        console.error(
+            `[DECK] Error querying deck "${deckName}":`,
+            error.message,
+        )
+        throw error
+    }
+}
+
+export async function markWordAsLearned(pageId: string): Promise<void> {
+    console.log(`[STUDY] Marking word ${pageId} as learned`)
+
+    try {
+        const notion = getNotion()
+        await notion.pages.update({
+            page_id: pageId,
+            properties: {
+                Learned: {
+                    checkbox: true,
+                },
+            },
+        })
+
+        console.log(`[STUDY] Word ${pageId} marked as learned`)
+    } catch (error: any) {
+        console.error(
+            `[STUDY] Error marking word ${pageId} as learned:`,
+            error.message,
+        )
+        throw error
+    }
+}
+
+export async function markWordAsNotLearned(pageId: string): Promise<void> {
+    console.log(`[STUDY] Marking word ${pageId} as not learned`)
+
+    try {
+        const notion = getNotion()
+        await notion.pages.update({
+            page_id: pageId,
+            properties: {
+                Learned: {
+                    checkbox: false,
+                },
+            },
+        })
+
+        console.log(`[STUDY] Word ${pageId} marked as not learned`)
+    } catch (error: any) {
+        console.error(
+            `[STUDY] Error marking word ${pageId} as not learned:`,
+            error.message,
+        )
+        throw error
+    }
+}
+
+export async function getTrainerWords(
+    language: 'Portuguese' | 'English',
+    presetId: 'active' | 'learned' | 'verbs' | 'nouns' | 'adjectives',
+): Promise<NotionWord[]> {
+    console.log(
+        `[TRAINER] Querying words - presetId: ${presetId}, language: ${language}`,
+    )
+
+    try {
+        const filterConditions: any[] = [
+            {
+                property: 'Language',
+                select: {
+                    equals: language,
+                },
+            },
+        ]
+
+        if (presetId === 'active') {
+            filterConditions.push({
+                property: 'Learned',
+                checkbox: {
+                    equals: false,
+                },
+            })
+        } else if (presetId === 'learned') {
+            filterConditions.push({
+                property: 'Learned',
+                checkbox: {
+                    equals: true,
+                },
+            })
+        } else if (presetId === 'verbs') {
+            filterConditions.push({
+                property: 'Typo',
+                select: {
+                    equals: 'Verbo',
+                },
+            })
+        } else if (presetId === 'nouns') {
+            filterConditions.push({
+                property: 'Typo',
+                select: {
+                    equals: 'substantivo',
+                },
+            })
+        } else if (presetId === 'adjectives') {
+            filterConditions.push({
+                property: 'Typo',
+                select: {
+                    equals: 'Adjetivo',
+                },
+            })
+        }
+
+        console.log(
+            `[TRAINER] Notion query filter: ${JSON.stringify(
+                filterConditions,
+            )}`,
+        )
+
+        const notion = getNotion()
+        const response = await notion.databases.query({
+            database_id: getDatabaseId(),
+            filter: { and: filterConditions },
+            sorts: [
+                {
+                    timestamp: 'created_time',
+                    direction: 'ascending',
+                },
+            ],
+        })
+
+        const words = response.results.map(notionToWord)
+        console.log(
+            `[TRAINER] Found ${words.length} words for preset: ${presetId}`,
+        )
+        return words
+    } catch (error: any) {
+        console.error(`[TRAINER] Error querying trainer words:`, error.message)
+        throw error
+    }
+}
+
+export async function getTrainerPresetCounts(
+    language: 'Portuguese' | 'English',
+): Promise<{
+    active: { active: number; total: number }
+    learned: { active: number; total: number }
+    verbs: { active: number; total: number }
+    nouns: { active: number; total: number }
+    adjectives: { active: number; total: number }
+}> {
+    console.log(`[TRAINER] Computing preset counts for language: ${language}`)
+
+    try {
+        // Get all words for this language
+        const languageWords = await getWords({ language })
+
+        const counts = {
+            active: {
+                active: languageWords.filter((w) => !w.learned).length,
+                total: languageWords.filter((w) => !w.learned).length,
+            },
+            learned: {
+                active: 0,
+                total: languageWords.filter((w) => w.learned).length,
+            },
+            verbs: {
+                active: languageWords.filter(
+                    (w) => w.typo === 'Verbo' && !w.learned,
+                ).length,
+                total: languageWords.filter((w) => w.typo === 'Verbo').length,
+            },
+            nouns: {
+                active: languageWords.filter(
+                    (w) => w.typo === 'substantivo' && !w.learned,
+                ).length,
+                total: languageWords.filter((w) => w.typo === 'substantivo')
+                    .length,
+            },
+            adjectives: {
+                active: languageWords.filter(
+                    (w) => w.typo === 'Adjetivo' && !w.learned,
+                ).length,
+                total: languageWords.filter((w) => w.typo === 'Adjetivo')
+                    .length,
+            },
+        }
+
+        console.log(`[TRAINER] Preset counts:`, counts)
+        return counts
+    } catch (error: any) {
+        console.error(`[TRAINER] Error computing preset counts:`, error.message)
+        throw error
+    }
+}
+
+export async function resetDeck(deckName: string): Promise<void> {
+    console.log(`[DECK] Resetting deck: "${deckName}"`)
+
+    try {
+        const notion = getNotion()
+        // Get all words in the deck (including learned ones)
+        const response = await notion.databases.query({
+            database_id: getDatabaseId(),
+            filter: {
+                property: 'Deck',
+                multi_select: {
+                    contains: deckName,
+                },
+            },
+        })
+
+        // Set learned=false for all words in the deck
+        for (const page of response.results) {
+            try {
+                const notion = getNotion()
+                await notion.pages.update({
+                    page_id: page.id,
+                    properties: {
+                        Learned: {
+                            checkbox: false,
+                        },
+                    },
+                })
+            } catch (error: any) {
+                console.error(
+                    `[DECK] Error resetting word ${page.id} in deck "${deckName}":`,
+                    error.message,
+                )
+                // Continue with other words even if one fails
+            }
+        }
+
+        console.log(
+            `[DECK] Reset ${response.results.length} words in deck: "${deckName}"`,
+        )
+    } catch (error: any) {
+        console.error(
+            `[DECK] Error resetting deck "${deckName}":`,
+            error.message,
+        )
+        throw error
     }
 }
 

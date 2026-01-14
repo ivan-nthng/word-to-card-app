@@ -1,10 +1,18 @@
 import OpenAI from 'openai'
 import { OpenAIResponse } from './types'
-import { OPENAI_API_KEY } from './env'
+import { getOpenAIApiKey } from './env'
 
-const openai = new OpenAI({
-    apiKey: OPENAI_API_KEY,
-})
+// Initialize OpenAI client lazily to avoid validation during build
+let openaiInstance: OpenAI | null = null
+
+function getOpenAI(): OpenAI {
+    if (!openaiInstance) {
+        openaiInstance = new OpenAI({
+            apiKey: getOpenAIApiKey(),
+        })
+    }
+    return openaiInstance
+}
 
 const SYSTEM_PROMPT = `You are a linguistic analysis tool. Analyze the input word and return ONLY a valid JSON object with the exact structure specified. Do not include any explanations, markdown formatting, or additional text. Return pure JSON only.`
 
@@ -28,7 +36,12 @@ const USER_PROMPT_TEMPLATE = (
 Rules:
 - detected_language: "pt" for Brazilian Portuguese, "en" for English, "ru" for Russian
 - pos: "verb", "noun", "adjective", or "other"
-- normalized.lemma: base form (dictionary form) for nouns/adjectives. If the input contains a typo or misspelling, correct it to the most likely intended word. If no correction needed, use the normalized base form.
+- normalized.lemma: 
+  * For Portuguese nouns: MUST include the correct definite article (o/a/os/as) + noun. Use singular form unless input is explicitly plural. Examples: "o carro", "a casa", "os livros", "as flores". If input already has an article, keep it but normalize spacing/case. If input lacks an article, infer and add the correct one.
+  * For English nouns: plain noun without articles (e.g., "car", "house")
+  * For adjectives: base form (dictionary form)
+  * If the input contains a typo or misspelling, correct it to the most likely intended word.
+  * If no correction needed, use the normalized base form with proper article for Portuguese nouns.
 - normalized.infinitive: infinitive form for verbs. If the input contains a typo or misspelling, correct it to the most likely intended infinitive form. If no correction needed, use the normalized infinitive form.
 - translation_ru: Russian translation
 - verb forms: only fill if detected_language is "pt" and pos is "verb"
@@ -38,6 +51,7 @@ Rules:
 
 export async function analyzeWord(word: string): Promise<OpenAIResponse> {
     try {
+        const openai = getOpenAI()
         const response = await openai.chat.completions.create({
             model: 'gpt-4o-mini',
             messages: [
