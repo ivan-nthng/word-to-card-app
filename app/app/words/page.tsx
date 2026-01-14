@@ -115,6 +115,18 @@ export default function WordsPage() {
         }
     }, [appLanguage, search])
 
+    useEffect(() => {
+        fetchDecks()
+    }, [fetchDecks])
+
+    useEffect(() => {
+        fetchTrainerCounts()
+    }, [fetchTrainerCounts])
+
+    useEffect(() => {
+        fetchWords()
+    }, [fetchWords])
+
     const handleSelectWord = (wordId: string) => {
         const newSelected = new Set(selectedWords)
         if (newSelected.has(wordId)) {
