@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, Suspense, useRef } from 'react'
+import { useEffect, useState, Suspense, useRef, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { PageHeader } from '@/app/ui/PageHeader'
@@ -100,9 +100,6 @@ function StudyDeckContent() {
     )
     const shuffledRef = useRef(false)
 
-    useEffect(() => {
-        fetchDeckWords()
-    }, [deckName])
 
     useEffect(() => {
         // Filter active words and shuffle once on load
@@ -126,7 +123,7 @@ function StudyDeckContent() {
         saveDeckSettings(deckName, settings)
     }, [deckName, settings])
 
-    const fetchDeckWords = async () => {
+    const fetchDeckWords = useCallback(async () => {
         try {
             setLoading(true)
             setError('')
@@ -151,7 +148,11 @@ function StudyDeckContent() {
         } finally {
             setLoading(false)
         }
-    }
+    }, [deckName])
+
+    useEffect(() => {
+        fetchDeckWords()
+    }, [fetchDeckWords])
 
     const handleMarkLearned = async () => {
         const currentWord = shuffledActiveWords[currentIndex]

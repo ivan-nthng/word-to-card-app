@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useParams } from 'next/navigation'
 import { PageHeader } from '@/app/ui/PageHeader'
 import { Card } from '@/app/ui/Card'
@@ -14,11 +14,7 @@ export default function WordDetailPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
-  useEffect(() => {
-    fetchWord()
-  }, [id])
-
-  const fetchWord = async () => {
+  const fetchWord = useCallback(async () => {
     try {
       const response = await fetch(`/api/words/${id}`)
       if (!response.ok) {
@@ -31,7 +27,11 @@ export default function WordDetailPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [id])
+
+  useEffect(() => {
+    fetchWord()
+  }, [fetchWord])
 
   const isPortugueseVerb = word?.language === 'Portuguese' && word?.typo === 'Verbo'
   const hasVerbForms = isPortugueseVerb && (word.voce || word.eleEla || word.elesElas || word.nos)

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { PageHeader } from '@/app/ui/PageHeader'
 import { Input } from '@/app/ui/Input'
@@ -56,21 +56,12 @@ export default function WordsPage() {
         new Set(),
     )
 
-    useEffect(() => {
-        fetchDecks()
-        fetchTrainerCounts()
-    }, [appLanguage])
-
-    useEffect(() => {
-        fetchWords()
-    }, [appLanguage, search])
-
     const handleLanguageChange = (language: 'Portuguese' | 'English') => {
         setAppLanguageState(language)
         setAppLanguage(language)
     }
 
-    const fetchDecks = async () => {
+    const fetchDecks = useCallback(async () => {
         try {
             const response = await fetch('/api/decks/summary')
             if (!response.ok) {
@@ -81,9 +72,9 @@ export default function WordsPage() {
         } catch (err: any) {
             console.error('[WordsPage] Error fetching decks:', err)
         }
-    }
+    }, [])
 
-    const fetchTrainerCounts = async () => {
+    const fetchTrainerCounts = useCallback(async () => {
         try {
             const response = await fetch(
                 `/api/trainer/presets/counts?language=${encodeURIComponent(
@@ -98,9 +89,9 @@ export default function WordsPage() {
         } catch (err: any) {
             console.error('[WordsPage] Error fetching trainer counts:', err)
         }
-    }
+    }, [appLanguage])
 
-    const fetchWords = async () => {
+    const fetchWords = useCallback(async () => {
         try {
             setLoading(true)
             const params = new URLSearchParams()
@@ -122,7 +113,7 @@ export default function WordsPage() {
         } finally {
             setLoading(false)
         }
-    }
+    }, [appLanguage, search])
 
     const handleSelectWord = (wordId: string) => {
         const newSelected = new Set(selectedWords)

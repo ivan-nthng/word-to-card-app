@@ -35,7 +35,11 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# prisma
-prisma.config.ts
+# database files
+*.db
+*.db-journal
 dev.db
 dev.db-journal
+
+# prisma (archived, not used)
+prisma.config.ts

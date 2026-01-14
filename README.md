@@ -166,6 +166,35 @@ npm run lint
 - Only the email specified in `ALLOWED_EMAIL` can sign in
 - Environment variables are never committed to version control
 
+## Deploy to Vercel
+
+### 1. Add Environment Variables
+
+In your Vercel project settings, add the following environment variables:
+
+- `OPENAI_API_KEY` - Your OpenAI API key
+- `NOTION_TOKEN` - Your Notion integration token
+- `NOTION_DATABASE_ID` - Your Notion database ID
+- `GOOGLE_CLIENT_ID` - Your Google OAuth client ID (if using auth)
+- `GOOGLE_CLIENT_SECRET` - Your Google OAuth client secret (if using auth)
+- `NEXTAUTH_SECRET` - A random secret string (if using auth)
+- `ALLOWED_EMAIL` - Allowed email for authentication (if using auth)
+
+**Note:** The app can run without authentication by setting `AUTH_ENABLED=false` in `lib/config.ts`.
+
+### 2. Deploy
+
+1. Push your code to GitHub
+2. Vercel will automatically detect the Next.js project and start building
+3. If the build succeeds, your app will be deployed
+
+### 3. Verify Deployment
+
+After deployment, verify that:
+- The root page loads correctly
+- API routes respond (check Vercel function logs)
+- Environment variables are set correctly
+
 ## License
 
 Private project

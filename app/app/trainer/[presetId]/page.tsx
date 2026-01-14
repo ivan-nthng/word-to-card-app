@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, Suspense, useRef } from 'react'
+import { useEffect, useState, Suspense, useRef, useCallback } from 'react'
 import { useParams, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { PageHeader } from '@/app/ui/PageHeader'
@@ -89,9 +89,6 @@ function TrainerContent() {
     )
     const shuffledRef = useRef(false)
 
-    useEffect(() => {
-        fetchWords()
-    }, [presetId, language])
 
     useEffect(() => {
         if (words.length > 0 && !shuffledRef.current) {
@@ -111,7 +108,7 @@ function TrainerContent() {
         saveTrainerSettings(presetId, settings)
     }, [presetId, settings])
 
-    const fetchWords = async () => {
+    const fetchWords = useCallback(async () => {
         try {
             setLoading(true)
             setError('')
@@ -140,7 +137,11 @@ function TrainerContent() {
         } finally {
             setLoading(false)
         }
-    }
+    }, [presetId, language])
+
+    useEffect(() => {
+        fetchWords()
+    }, [fetchWords])
 
     const isPortugueseVerb = (word: NotionWord) => {
         return word.language === 'Portuguese' && word.typo === 'Verbo'
