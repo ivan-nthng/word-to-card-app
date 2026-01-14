@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { AUTH_ENABLED } from '@/lib/config'
 import { markWordAsLearned } from '@/lib/notion'
+import { logger } from '@/lib/logger'
 
 export const dynamic = 'force-dynamic'
 
@@ -34,7 +35,7 @@ export async function POST(request: NextRequest) {
 
         return NextResponse.json({ success: true })
     } catch (error: any) {
-        console.error('[STUDY] Error marking word as learned:', error)
+        logger.error('STUDY', 'Error marking word as learned', { error: error.message })
         return NextResponse.json(
             { error: error.message || 'Internal server error' },
             { status: 500 },

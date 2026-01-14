@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { AUTH_ENABLED } from '@/lib/config'
 import { resetDeck } from '@/lib/notion'
+import { logger } from '@/lib/logger'
 
 export const dynamic = 'force-dynamic'
 
@@ -25,7 +26,7 @@ export async function POST(
 
         return NextResponse.json({ success: true })
     } catch (error: any) {
-        console.error('[DECK] Error resetting deck:', error)
+        logger.error('DECK', 'Error resetting deck', { error: error.message })
         return NextResponse.json(
             { error: error.message || 'Internal server error' },
             { status: 500 },

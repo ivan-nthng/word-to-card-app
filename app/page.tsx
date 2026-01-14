@@ -3,6 +3,7 @@ import { getSession } from '@/lib/auth'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from './ui/Button'
+import { logger } from '@/lib/logger'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,7 +18,7 @@ export default async function Home() {
     }
   } catch (error) {
     // If auth check fails, continue to show the page
-    console.error('Error checking session:', error)
+    logger.error('AUTH', 'Error checking session', { error: error instanceof Error ? error.message : String(error) })
   }
 
   return (

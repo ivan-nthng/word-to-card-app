@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { AUTH_ENABLED } from '@/lib/config'
 import { markWordAsLearned, markWordAsNotLearned } from '@/lib/notion'
+import { logger } from '@/lib/logger'
 
 export const dynamic = 'force-dynamic'
 
@@ -29,14 +30,16 @@ export async function POST(request: NextRequest) {
 
         if (action === 'learned') {
             await markWordAsLearned(notionPageId)
-            console.log(
-                `[TRAINER] review action pageId=${notionPageId} action=learned`,
-            )
+            logger.info('TRAINER', 'review action', {
+                pageId: notionPageId,
+                action: 'learned',
+            })
         } else if (action === 'not_learned') {
             await markWordAsNotLearned(notionPageId)
-            console.log(
-                `[TRAINER] review action pageId=${notionPageId} action=not_learned`,
-            )
+            logger.info('TRAINER', 'review action', {
+                pageId: notionPageId,
+                action: 'not_learned',
+            })
         } else {
             return NextResponse.json(
                 { error: 'Invalid action. Must be "learned" or "not_learned"' },
@@ -46,7 +49,9 @@ export async function POST(request: NextRequest) {
 
         return NextResponse.json({ success: true })
     } catch (error: any) {
-        console.error('[TRAINER] Error updating learned status:', error)
+        logger.error('TRAINER', 'Error updating learned status', {
+            error: error.message,
+        })
         return NextResponse.json(
             { error: error.message || 'Internal server error' },
             { status: 500 },

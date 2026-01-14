@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { AUTH_ENABLED } from '@/lib/config'
 import { getTrainerWords } from '@/lib/notion'
+import { logger } from '@/lib/logger'
 
 export const dynamic = 'force-dynamic'
 
@@ -47,7 +48,7 @@ export async function GET(
 
         return NextResponse.json(words)
     } catch (error: any) {
-        console.error('[TRAINER] Error fetching trainer words:', error)
+        logger.error('TRAINER', 'Error fetching trainer words', { error: error.message })
         return NextResponse.json(
             { error: error.message || 'Internal server error' },
             { status: 500 },

@@ -2,6 +2,7 @@ import { Client } from '@notionhq/client'
 import { OpenAIResponse } from './types'
 import { NotionWord } from './types'
 import { getNotionToken, getNotionDatabaseId } from './env'
+import { logger } from './logger'
 
 // Initialize Notion client lazily to avoid validation during build
 let notionInstance: Client | null = null
@@ -11,9 +12,54 @@ function getNotion(): Client {
     if (!notionInstance) {
         notionInstance = new Client({
             auth: getNotionToken(),
+            timeoutMs: 10000, // 10 second timeout
         })
     }
     return notionInstance
+}
+
+// Retry wrapper for Notion API calls with exponential backoff
+async function retryNotionCall<T>(
+    operation: () => Promise<T>,
+    maxRetries: number = 3,
+    baseDelay: number = 1000,
+): Promise<T> {
+    let lastError: Error | null = null
+
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+        try {
+            return await operation()
+        } catch (error: any) {
+            lastError = error
+
+            // Check if it's a retryable error
+            const isRetryable =
+                error.message?.includes('ECONNRESET') ||
+                error.message?.includes('ETIMEDOUT') ||
+                error.message?.includes('ENOTFOUND') ||
+                error.message?.includes('timeout') ||
+                error.code === 'ECONNRESET' ||
+                error.code === 'ETIMEDOUT' ||
+                (error.status && error.status >= 500 && error.status < 600)
+
+            if (!isRetryable || attempt === maxRetries - 1) {
+                throw error
+            }
+
+            // Exponential backoff: 1s, 2s, 4s
+            const delay = baseDelay * Math.pow(2, attempt)
+            logger.info(
+                'NOTION',
+                `Retry attempt ${attempt + 1}/${maxRetries} after ${delay}ms`,
+                {
+                    error: error.message,
+                },
+            )
+            await new Promise((resolve) => setTimeout(resolve, delay))
+        }
+    }
+
+    throw lastError || new Error('Unknown error in retry logic')
 }
 
 function getDatabaseId(): string {
@@ -50,9 +96,11 @@ export async function validateNotionSchema(): Promise<void> {
 
     try {
         const notion = getNotion()
-        const database = await notion.databases.retrieve({
-            database_id: getDatabaseId(),
-        })
+        const database = await retryNotionCall(() =>
+            notion.databases.retrieve({
+                database_id: getDatabaseId(),
+            }),
+        )
         const properties = (database as any).properties
         const propertyNames = Object.keys(properties)
 
@@ -132,16 +180,18 @@ function notionToWord(page: any): NotionWord {
 
 export async function findWordByKey(key: string): Promise<any | null> {
     const notion = getNotion()
-    const response = await notion.databases.query({
-        database_id: getDatabaseId(),
-        filter: {
-            property: 'Key',
-            rich_text: {
-                equals: key,
+    const response = await retryNotionCall(() =>
+        notion.databases.query({
+            database_id: getDatabaseId(),
+            filter: {
+                property: 'Key',
+                rich_text: {
+                    equals: key,
+                },
             },
-        },
-        page_size: 1,
-    })
+            page_size: 1,
+        }),
+    )
 
     if (response.results.length === 0) {
         return null
@@ -234,7 +284,7 @@ export async function createWord(
 
     if (isPortugueseVerb && openaiResponse.verb) {
         if (openaiResponse.verb.presente) {
-            console.log('[ADD_WORD] Mapping presente')
+            logger.info('ADD_WORD', 'Mapping presente')
             const presente = openaiResponse.verb.presente
             if (presente.eu) {
                 properties.eu = {
@@ -264,7 +314,7 @@ export async function createWord(
         }
 
         if (openaiResponse.verb.preterito_perfeito) {
-            console.log('[ADD_WORD] Mapping preterito_perfeito')
+            logger.info('ADD_WORD', 'Mapping preterito_perfeito')
             Object.assign(
                 properties,
                 mapVerbTenseToProperties(
@@ -274,7 +324,7 @@ export async function createWord(
             )
             // Map eu field separately
             if (openaiResponse.verb.preterito_perfeito.eu) {
-                console.log('[ADD_WORD] Mapping perfeito (eu)')
+                logger.info('ADD_WORD', 'Mapping perfeito (eu)')
                 properties.Perfeito_eu = {
                     rich_text: [
                         {
@@ -289,7 +339,7 @@ export async function createWord(
         }
 
         if (openaiResponse.verb.preterito_imperfeito) {
-            console.log('[ADD_WORD] Mapping preterito_imperfeito')
+            logger.info('ADD_WORD', 'Mapping preterito_imperfeito')
             Object.assign(
                 properties,
                 mapVerbTenseToProperties(
@@ -299,7 +349,7 @@ export async function createWord(
             )
             // Map eu field separately
             if (openaiResponse.verb.preterito_imperfeito.eu) {
-                console.log('[ADD_WORD] Mapping imperfeito (eu)')
+                logger.info('ADD_WORD', 'Mapping imperfeito (eu)')
                 properties.Imperfeito_eu = {
                     rich_text: [
                         {
@@ -311,19 +361,22 @@ export async function createWord(
                     ],
                 }
             }
-            console.log(
-                '[ADD_WORD] Mapping imperfeito (ele/ela, eles/elas, nos)',
+            logger.info(
+                'ADD_WORD',
+                'Mapping imperfeito (ele/ela, eles/elas, nos)',
             )
         }
     }
 
     const notion = getNotion()
-    const response = await notion.pages.create({
-        parent: {
-            database_id: getDatabaseId(),
-        },
-        properties,
-    })
+    const response = await retryNotionCall(() =>
+        notion.pages.create({
+            parent: {
+                database_id: getDatabaseId(),
+            },
+            properties,
+        }),
+    )
 
     return response.id
 }
@@ -334,7 +387,9 @@ export async function updateWord(
     openaiResponse: OpenAIResponse,
 ): Promise<void> {
     const notion = getNotion()
-    const page = await notion.pages.retrieve({ page_id: pageId })
+    const page = await retryNotionCall(() =>
+        notion.pages.retrieve({ page_id: pageId }),
+    )
     const props = (page as any).properties
     const currentLanguage = props.Language?.select?.name
     const currentTypo = props.Typo?.select?.name
@@ -355,7 +410,7 @@ export async function updateWord(
 
     if (isPortugueseVerb && openaiResponse.verb) {
         if (openaiResponse.verb.presente) {
-            console.log('[ADD_WORD] Mapping presente')
+            logger.info('ADD_WORD', 'Mapping presente')
             const presente = openaiResponse.verb.presente
             if (presente.eu) {
                 properties.eu = {
@@ -385,7 +440,7 @@ export async function updateWord(
         }
 
         if (openaiResponse.verb.preterito_perfeito) {
-            console.log('[ADD_WORD] Mapping preterito_perfeito')
+            logger.info('ADD_WORD', 'Mapping preterito_perfeito')
             Object.assign(
                 properties,
                 mapVerbTenseToProperties(
@@ -395,7 +450,7 @@ export async function updateWord(
             )
             // Map eu field separately
             if (openaiResponse.verb.preterito_perfeito.eu) {
-                console.log('[ADD_WORD] Mapping perfeito (eu)')
+                logger.info('ADD_WORD', 'Mapping perfeito (eu)')
                 properties.Perfeito_eu = {
                     rich_text: [
                         {
@@ -410,7 +465,7 @@ export async function updateWord(
         }
 
         if (openaiResponse.verb.preterito_imperfeito) {
-            console.log('[ADD_WORD] Mapping preterito_imperfeito')
+            logger.info('ADD_WORD', 'Mapping preterito_imperfeito')
             Object.assign(
                 properties,
                 mapVerbTenseToProperties(
@@ -420,7 +475,7 @@ export async function updateWord(
             )
             // Map eu field separately
             if (openaiResponse.verb.preterito_imperfeito.eu) {
-                console.log('[ADD_WORD] Mapping imperfeito (eu)')
+                logger.info('ADD_WORD', 'Mapping imperfeito (eu)')
                 properties.Imperfeito_eu = {
                     rich_text: [
                         {
@@ -432,32 +487,37 @@ export async function updateWord(
                     ],
                 }
             }
-            console.log(
-                '[ADD_WORD] Mapping imperfeito (ele/ela, eles/elas, nos)',
+            logger.info(
+                'ADD_WORD',
+                'Mapping imperfeito (ele/ela, eles/elas, nos)',
             )
         }
     }
 
-    await notion.pages.update({
-        page_id: pageId,
-        properties,
-    })
+    await retryNotionCall(() =>
+        notion.pages.update({
+            page_id: pageId,
+            properties,
+        }),
+    )
 }
 
 export async function getLatestWords(
     limit: number = 50,
 ): Promise<NotionWord[]> {
     const notion = getNotion()
-    const response = await notion.databases.query({
-        database_id: getDatabaseId(),
-        sorts: [
-            {
-                timestamp: 'created_time',
-                direction: 'descending',
-            },
-        ],
-        page_size: limit,
-    })
+    const response = await retryNotionCall(() =>
+        notion.databases.query({
+            database_id: getDatabaseId(),
+            sorts: [
+                {
+                    timestamp: 'created_time',
+                    direction: 'descending',
+                },
+            ],
+            page_size: limit,
+        }),
+    )
 
     return response.results.map(notionToWord)
 }
@@ -467,7 +527,7 @@ export async function getWords(filters?: {
     language?: string
     search?: string
 }): Promise<NotionWord[]> {
-    console.log(`[WORDS] Fetching words with filters:`, filters)
+    logger.info('WORDS', 'Fetching words with filters', { filters })
 
     try {
         const filterConditions: any[] = []
@@ -493,20 +553,22 @@ export async function getWords(filters?: {
         // Note: Notion doesn't support full-text search on title easily
         // We'll fetch all and filter client-side for MVP
         const notion = getNotion()
-        const response = await notion.databases.query({
-            database_id: getDatabaseId(),
-            filter:
-                filterConditions.length > 0
-                    ? { and: filterConditions }
-                    : undefined,
-            sorts: [
-                {
-                    timestamp: 'created_time',
-                    direction: 'descending',
-                },
-            ],
-            page_size: 100, // Fetch more for search filtering
-        })
+        const response = await retryNotionCall(() =>
+            notion.databases.query({
+                database_id: getDatabaseId(),
+                filter:
+                    filterConditions.length > 0
+                        ? { and: filterConditions }
+                        : undefined,
+                sorts: [
+                    {
+                        timestamp: 'created_time',
+                        direction: 'descending',
+                    },
+                ],
+                page_size: 100, // Fetch more for search filtering
+            }),
+        )
 
         let words = response.results.map(notionToWord)
 
@@ -520,16 +582,16 @@ export async function getWords(filters?: {
             )
         }
 
-        console.log(`[WORDS] Returning ${words.length} words`)
+        logger.info('WORDS', `Returning ${words.length} words`)
         return words
     } catch (error: any) {
-        console.error(`[WORDS] Error fetching words:`, error.message)
+        logger.error('WORDS', 'Error fetching words', { error: error.message })
         throw error
     }
 }
 
 export async function getAllWords(): Promise<NotionWord[]> {
-    console.log(`[WORDS] Fetching all words`)
+    logger.info('WORDS', 'Fetching all words')
 
     try {
         const allWords: NotionWord[] = []
@@ -537,20 +599,24 @@ export async function getAllWords(): Promise<NotionWord[]> {
 
         do {
             const notion = getNotion()
-            const response = await notion.databases.query({
-                database_id: getDatabaseId(),
-                start_cursor: cursor,
-                page_size: 100,
-            })
+            const response = await retryNotionCall(() =>
+                notion.databases.query({
+                    database_id: getDatabaseId(),
+                    start_cursor: cursor,
+                    page_size: 100,
+                }),
+            )
 
             allWords.push(...response.results.map(notionToWord))
             cursor = response.next_cursor || undefined
         } while (cursor)
 
-        console.log(`[WORDS] Fetched ${allWords.length} total words`)
+        logger.info('WORDS', `Fetched ${allWords.length} total words`)
         return allWords
     } catch (error: any) {
-        console.error(`[WORDS] Error fetching all words:`, error.message)
+        logger.error('WORDS', 'Error fetching all words', {
+            error: error.message,
+        })
         throw error
     }
 }
@@ -563,7 +629,7 @@ export interface DeckSummary {
 }
 
 export async function getDeckSummary(): Promise<DeckSummary[]> {
-    console.log(`[DECK] Computing deck summary`)
+    logger.info('DECK', 'Computing deck summary')
 
     try {
         const allWords = await getAllWords()
@@ -598,45 +664,49 @@ export async function getDeckSummary(): Promise<DeckSummary[]> {
         // Sort by name
         summary.sort((a, b) => a.name.localeCompare(b.name))
 
-        console.log(`[DECK] Found ${summary.length} decks`)
+        logger.info('DECK', `Found ${summary.length} decks`)
         return summary
     } catch (error: any) {
-        console.error(`[DECK] Error computing deck summary:`, error.message)
+        logger.error('DECK', 'Error computing deck summary', {
+            error: error.message,
+        })
         throw error
     }
 }
 
 export async function getAllDeckWords(deckName: string): Promise<NotionWord[]> {
-    console.log(`[DECK] Querying all words for deck: "${deckName}"`)
+    logger.info('DECK', `Querying all words for deck: "${deckName}"`)
 
     try {
         const notion = getNotion()
-        const response = await notion.databases.query({
-            database_id: getDatabaseId(),
-            filter: {
-                property: 'Deck',
-                multi_select: {
-                    contains: deckName,
+        const response = await retryNotionCall(() =>
+            notion.databases.query({
+                database_id: getDatabaseId(),
+                filter: {
+                    property: 'Deck',
+                    multi_select: {
+                        contains: deckName,
+                    },
                 },
-            },
-            sorts: [
-                {
-                    timestamp: 'created_time',
-                    direction: 'ascending',
-                },
-            ],
-        })
+                sorts: [
+                    {
+                        timestamp: 'created_time',
+                        direction: 'ascending',
+                    },
+                ],
+            }),
+        )
 
         const words = response.results.map(notionToWord)
-        console.log(
-            `[DECK] Found ${words.length} total words in deck: "${deckName}"`,
+        logger.info(
+            'DECK',
+            `Found ${words.length} total words in deck: "${deckName}"`,
         )
         return words
     } catch (error: any) {
-        console.error(
-            `[DECK] Error querying all deck words "${deckName}":`,
-            error.message,
-        )
+        logger.error('DECK', `Error querying all deck words "${deckName}"`, {
+            error: error.message,
+        })
         throw error
     }
 }
@@ -657,13 +727,15 @@ export async function addWordsToDeck(
     pageIds: string[],
     deckName: string,
 ): Promise<void> {
-    console.log(`[DECK] Adding ${pageIds.length} words to deck: "${deckName}"`)
+    logger.info('DECK', `Adding ${pageIds.length} words to deck: "${deckName}"`)
 
     const notion = getNotion()
     for (const pageId of pageIds) {
         try {
             // Get current page to read existing decks
-            const page = await notion.pages.retrieve({ page_id: pageId })
+            const page = await retryNotionCall(() =>
+                notion.pages.retrieve({ page_id: pageId }),
+            )
             const props = (page as any).properties
             const currentDecks =
                 props.Deck?.multi_select?.map((item: any) => item.name) || []
@@ -674,22 +746,25 @@ export async function addWordsToDeck(
             }
 
             // Update with new deck list
-            await notion.pages.update({
-                page_id: pageId,
-                properties: {
-                    Deck: {
-                        multi_select: currentDecks.map((name: string) => ({
-                            name,
-                        })),
+            await retryNotionCall(() =>
+                notion.pages.update({
+                    page_id: pageId,
+                    properties: {
+                        Deck: {
+                            multi_select: currentDecks.map((name: string) => ({
+                                name,
+                            })),
+                        },
                     },
-                },
-            })
+                }),
+            )
 
-            console.log(`[DECK] Added word ${pageId} to deck: "${deckName}"`)
+            logger.info('DECK', `Added word ${pageId} to deck: "${deckName}"`)
         } catch (error: any) {
-            console.error(
-                `[DECK] Error adding word ${pageId} to deck "${deckName}":`,
-                error.message,
+            logger.error(
+                'DECK',
+                `Error adding word ${pageId} to deck "${deckName}"`,
+                { error: error.message },
             )
             throw error
         }
@@ -700,15 +775,18 @@ export async function removeWordsFromDeck(
     pageIds: string[],
     deckName: string,
 ): Promise<void> {
-    console.log(
-        `[DECK] Removing ${pageIds.length} words from deck: "${deckName}"`,
+    logger.info(
+        'DECK',
+        `Removing ${pageIds.length} words from deck: "${deckName}"`,
     )
 
     const notion = getNotion()
     for (const pageId of pageIds) {
         try {
             // Get current page to read existing decks
-            const page = await notion.pages.retrieve({ page_id: pageId })
+            const page = await retryNotionCall(() =>
+                notion.pages.retrieve({ page_id: pageId }),
+            )
             const props = (page as any).properties
             const currentDecks =
                 props.Deck?.multi_select?.map((item: any) => item.name) || []
@@ -719,24 +797,28 @@ export async function removeWordsFromDeck(
             )
 
             // Update with new deck list
-            await notion.pages.update({
-                page_id: pageId,
-                properties: {
-                    Deck: {
-                        multi_select: updatedDecks.map((name: string) => ({
-                            name,
-                        })),
+            await retryNotionCall(() =>
+                notion.pages.update({
+                    page_id: pageId,
+                    properties: {
+                        Deck: {
+                            multi_select: updatedDecks.map((name: string) => ({
+                                name,
+                            })),
+                        },
                     },
-                },
-            })
+                }),
+            )
 
-            console.log(
-                `[DECK] Removed word ${pageId} from deck: "${deckName}"`,
+            logger.info(
+                'DECK',
+                `Removed word ${pageId} from deck: "${deckName}"`,
             )
         } catch (error: any) {
-            console.error(
-                `[DECK] Error removing word ${pageId} from deck "${deckName}":`,
-                error.message,
+            logger.error(
+                'DECK',
+                `Error removing word ${pageId} from deck "${deckName}"`,
+                { error: error.message },
             )
             throw error
         }
@@ -744,92 +826,98 @@ export async function removeWordsFromDeck(
 }
 
 export async function getDeckWords(deckName: string): Promise<NotionWord[]> {
-    console.log(`[DECK] Querying words for deck: "${deckName}"`)
+    logger.info('DECK', `Querying words for deck: "${deckName}"`)
 
     try {
         const notion = getNotion()
-        const response = await notion.databases.query({
-            database_id: getDatabaseId(),
-            filter: {
-                and: [
-                    {
-                        property: 'Deck',
-                        multi_select: {
-                            contains: deckName,
+        const response = await retryNotionCall(() =>
+            notion.databases.query({
+                database_id: getDatabaseId(),
+                filter: {
+                    and: [
+                        {
+                            property: 'Deck',
+                            multi_select: {
+                                contains: deckName,
+                            },
                         },
-                    },
-                    {
-                        property: 'Learned',
-                        checkbox: {
-                            equals: false,
+                        {
+                            property: 'Learned',
+                            checkbox: {
+                                equals: false,
+                            },
                         },
+                    ],
+                },
+                sorts: [
+                    {
+                        timestamp: 'created_time',
+                        direction: 'ascending',
                     },
                 ],
-            },
-            sorts: [
-                {
-                    timestamp: 'created_time',
-                    direction: 'ascending',
-                },
-            ],
-        })
+            }),
+        )
 
         const words = response.results.map(notionToWord)
-        console.log(`[DECK] Found ${words.length} words in deck: "${deckName}"`)
+        logger.info(
+            'DECK',
+            `Found ${words.length} words in deck: "${deckName}"`,
+        )
         return words
     } catch (error: any) {
-        console.error(
-            `[DECK] Error querying deck "${deckName}":`,
-            error.message,
-        )
+        logger.error('DECK', `Error querying deck "${deckName}"`, {
+            error: error.message,
+        })
         throw error
     }
 }
 
 export async function markWordAsLearned(pageId: string): Promise<void> {
-    console.log(`[STUDY] Marking word ${pageId} as learned`)
+    logger.info('STUDY', `Marking word ${pageId} as learned`)
 
     try {
         const notion = getNotion()
-        await notion.pages.update({
-            page_id: pageId,
-            properties: {
-                Learned: {
-                    checkbox: true,
+        await retryNotionCall(() =>
+            notion.pages.update({
+                page_id: pageId,
+                properties: {
+                    Learned: {
+                        checkbox: true,
+                    },
                 },
-            },
-        })
-
-        console.log(`[STUDY] Word ${pageId} marked as learned`)
-    } catch (error: any) {
-        console.error(
-            `[STUDY] Error marking word ${pageId} as learned:`,
-            error.message,
+            }),
         )
+
+        logger.info('STUDY', `Word ${pageId} marked as learned`)
+    } catch (error: any) {
+        logger.error('STUDY', `Error marking word ${pageId} as learned`, {
+            error: error.message,
+        })
         throw error
     }
 }
 
 export async function markWordAsNotLearned(pageId: string): Promise<void> {
-    console.log(`[STUDY] Marking word ${pageId} as not learned`)
+    logger.info('STUDY', `Marking word ${pageId} as not learned`)
 
     try {
         const notion = getNotion()
-        await notion.pages.update({
-            page_id: pageId,
-            properties: {
-                Learned: {
-                    checkbox: false,
+        await retryNotionCall(() =>
+            notion.pages.update({
+                page_id: pageId,
+                properties: {
+                    Learned: {
+                        checkbox: false,
+                    },
                 },
-            },
-        })
-
-        console.log(`[STUDY] Word ${pageId} marked as not learned`)
-    } catch (error: any) {
-        console.error(
-            `[STUDY] Error marking word ${pageId} as not learned:`,
-            error.message,
+            }),
         )
+
+        logger.info('STUDY', `Word ${pageId} marked as not learned`)
+    } catch (error: any) {
+        logger.error('STUDY', `Error marking word ${pageId} as not learned`, {
+            error: error.message,
+        })
         throw error
     }
 }
@@ -838,8 +926,9 @@ export async function getTrainerWords(
     language: 'Portuguese' | 'English',
     presetId: 'active' | 'learned' | 'verbs' | 'nouns' | 'adjectives',
 ): Promise<NotionWord[]> {
-    console.log(
-        `[TRAINER] Querying words - presetId: ${presetId}, language: ${language}`,
+    logger.info(
+        'TRAINER',
+        `Querying words - presetId: ${presetId}, language: ${language}`,
     )
 
     try {
@@ -889,31 +978,32 @@ export async function getTrainerWords(
             })
         }
 
-        console.log(
-            `[TRAINER] Notion query filter: ${JSON.stringify(
-                filterConditions,
-            )}`,
-        )
+        logger.info('TRAINER', 'Notion query filter', { filterConditions })
 
         const notion = getNotion()
-        const response = await notion.databases.query({
-            database_id: getDatabaseId(),
-            filter: { and: filterConditions },
-            sorts: [
-                {
-                    timestamp: 'created_time',
-                    direction: 'ascending',
-                },
-            ],
-        })
+        const response = await retryNotionCall(() =>
+            notion.databases.query({
+                database_id: getDatabaseId(),
+                filter: { and: filterConditions },
+                sorts: [
+                    {
+                        timestamp: 'created_time',
+                        direction: 'ascending',
+                    },
+                ],
+            }),
+        )
 
         const words = response.results.map(notionToWord)
-        console.log(
-            `[TRAINER] Found ${words.length} words for preset: ${presetId}`,
+        logger.info(
+            'TRAINER',
+            `Found ${words.length} words for preset: ${presetId}`,
         )
         return words
     } catch (error: any) {
-        console.error(`[TRAINER] Error querying trainer words:`, error.message)
+        logger.error('TRAINER', 'Error querying trainer words', {
+            error: error.message,
+        })
         throw error
     }
 }
@@ -927,7 +1017,7 @@ export async function getTrainerPresetCounts(
     nouns: { active: number; total: number }
     adjectives: { active: number; total: number }
 }> {
-    console.log(`[TRAINER] Computing preset counts for language: ${language}`)
+    logger.info('TRAINER', `Computing preset counts for language: ${language}`)
 
     try {
         // Get all words for this language
@@ -964,59 +1054,66 @@ export async function getTrainerPresetCounts(
             },
         }
 
-        console.log(`[TRAINER] Preset counts:`, counts)
+        logger.info('TRAINER', 'Preset counts', { counts })
         return counts
     } catch (error: any) {
-        console.error(`[TRAINER] Error computing preset counts:`, error.message)
+        logger.error('TRAINER', 'Error computing preset counts', {
+            error: error.message,
+        })
         throw error
     }
 }
 
 export async function resetDeck(deckName: string): Promise<void> {
-    console.log(`[DECK] Resetting deck: "${deckName}"`)
+    logger.info('DECK', `Resetting deck: "${deckName}"`)
 
     try {
         const notion = getNotion()
         // Get all words in the deck (including learned ones)
-        const response = await notion.databases.query({
-            database_id: getDatabaseId(),
-            filter: {
-                property: 'Deck',
-                multi_select: {
-                    contains: deckName,
+        const response = await retryNotionCall(() =>
+            notion.databases.query({
+                database_id: getDatabaseId(),
+                filter: {
+                    property: 'Deck',
+                    multi_select: {
+                        contains: deckName,
+                    },
                 },
-            },
-        })
+            }),
+        )
 
         // Set learned=false for all words in the deck
         for (const page of response.results) {
             try {
                 const notion = getNotion()
-                await notion.pages.update({
-                    page_id: page.id,
-                    properties: {
-                        Learned: {
-                            checkbox: false,
+                await retryNotionCall(() =>
+                    notion.pages.update({
+                        page_id: page.id,
+                        properties: {
+                            Learned: {
+                                checkbox: false,
+                            },
                         },
-                    },
-                })
+                    }),
+                )
             } catch (error: any) {
-                console.error(
-                    `[DECK] Error resetting word ${page.id} in deck "${deckName}":`,
-                    error.message,
+                logger.error(
+                    'DECK',
+                    `Error resetting word ${page.id} in deck "${deckName}"`,
+                    { error: error.message },
                 )
                 // Continue with other words even if one fails
             }
         }
 
-        console.log(
-            `[DECK] Reset ${response.results.length} words in deck: "${deckName}"`,
+        logger.info(
+            'DECK',
+            `Reset ${response.results.length} words in deck: "${deckName}"`,
         )
     } catch (error: any) {
-        console.error(
-            `[DECK] Error resetting deck "${deckName}":`,
-            error.message,
-        )
+        logger.error('DECK', `Error resetting deck "${deckName}"`, {
+            error: error.message,
+        })
         throw error
     }
 }

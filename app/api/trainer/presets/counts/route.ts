@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { AUTH_ENABLED } from '@/lib/config'
 import { getTrainerPresetCounts } from '@/lib/notion'
+import { logger } from '@/lib/logger'
 
 export const dynamic = 'force-dynamic'
 
@@ -26,7 +27,7 @@ export async function GET(request: NextRequest) {
 
         return NextResponse.json(counts)
     } catch (error: any) {
-        console.error('[TRAINER] Error fetching preset counts:', error)
+        logger.error('TRAINER', 'Error fetching preset counts', { error: error.message })
         return NextResponse.json(
             { error: error.message || 'Internal server error' },
             { status: 500 },

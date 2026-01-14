@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { AUTH_ENABLED } from '@/lib/config'
 import { getAllDeckWords } from '@/lib/notion'
+import { logger } from '@/lib/logger'
 
 export const dynamic = 'force-dynamic'
 
@@ -25,7 +26,7 @@ export async function GET(
 
         return NextResponse.json(words)
     } catch (error: any) {
-        console.error('[DECK] Error fetching deck words:', error)
+        logger.error('DECK', 'Error fetching deck words', { error: error.message })
         return NextResponse.json(
             { error: error.message || 'Internal server error' },
             { status: 500 },

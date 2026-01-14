@@ -7,6 +7,8 @@ import { PageHeader } from '@/app/ui/PageHeader'
 import { Card } from '@/app/ui/Card'
 import { Button } from '@/app/ui/Button'
 import { NotionWord } from '@/lib/types'
+import { logger } from '@/lib/logger'
+import { apiFetch } from '@/lib/client'
 
 interface DeckSettings {
     frontMode:
@@ -127,22 +129,15 @@ function StudyDeckContent() {
             setLoading(true)
             setError('')
             shuffledRef.current = false
-            console.log(`[STUDY] Fetching all words for deck: "${deckName}"`)
+            logger.info('STUDY', `Fetching all words for deck: "${deckName}"`)
 
-            const response = await fetch(
+            const data = await apiFetch<NotionWord[]>(
                 `/api/decks/${encodeURIComponent(deckName)}/words`,
             )
-            if (!response.ok) {
-                throw new Error('Failed to fetch deck words')
-            }
-
-            const data = await response.json()
-            console.log(
-                `[STUDY] Loaded ${data.length} total words for deck: "${deckName}"`,
-            )
+            logger.info('STUDY', `Loaded ${data.length} total words for deck: "${deckName}"`)
             setAllWords(data)
         } catch (err: any) {
-            console.error(`[STUDY] Error fetching deck words:`, err)
+            logger.error('STUDY', 'Error fetching deck words', { error: err.message })
             setError(err.message || 'An error occurred')
         } finally {
             setLoading(false)
@@ -158,21 +153,14 @@ function StudyDeckContent() {
         if (!currentWord) return
 
         try {
-            console.log(`[STUDY] Marking word ${currentWord.id} as learned`)
-            const response = await fetch(
+            logger.info('STUDY', `Marking word ${currentWord.id} as learned`)
+            await apiFetch(
                 `/api/decks/${encodeURIComponent(deckName)}/learned`,
                 {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
                     body: JSON.stringify({ notionPageId: currentWord.id }),
                 },
             )
-
-            if (!response.ok) {
-                throw new Error('Failed to mark word as learned')
-            }
 
             // Update local state
             const updatedAllWords = allWords.map((w) =>
@@ -195,7 +183,7 @@ function StudyDeckContent() {
 
             setFlipped(false)
         } catch (err: any) {
-            console.error(`[STUDY] Error marking word as learned:`, err)
+            logger.error('STUDY', 'Error marking word as learned', { error: err.message })
             setError(err.message || 'Failed to mark as learned')
         }
     }
@@ -221,24 +209,20 @@ function StudyDeckContent() {
     const handleResetDeck = async () => {
         try {
             setResetting(true)
-            console.log(`[STUDY] Resetting deck: "${deckName}"`)
+            logger.info('STUDY', `Resetting deck: "${deckName}"`)
 
-            const response = await fetch(
+            await apiFetch(
                 `/api/decks/${encodeURIComponent(deckName)}/reset`,
                 {
                     method: 'POST',
                 },
             )
 
-            if (!response.ok) {
-                throw new Error('Failed to reset deck')
-            }
-
             // Reload words and reshuffle
             shuffledRef.current = false
             await fetchDeckWords()
         } catch (err: any) {
-            console.error(`[STUDY] Error resetting deck:`, err)
+            logger.error('STUDY', 'Error resetting deck', { error: err.message })
             setError(err.message || 'Failed to reset deck')
         } finally {
             setResetting(false)
@@ -504,7 +488,7 @@ function StudyDeckContent() {
                     title={`Study: ${deckName}`}
                     backHref="/app/words"
                 />
-                <Card className="bg-red-50 border-red-200 text-red-800">
+                <Card className="bg-error-background border-error-border text-error-text">
                     {error}
                 </Card>
             </div>

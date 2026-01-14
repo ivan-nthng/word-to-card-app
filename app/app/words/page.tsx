@@ -7,6 +7,8 @@ import { Input } from '@/app/ui/Input'
 import { Card } from '@/app/ui/Card'
 import { Button } from '@/app/ui/Button'
 import { NotionWord } from '@/lib/types'
+import { logger } from '@/lib/logger'
+import { apiFetch } from '@/lib/client'
 
 interface DeckSummary {
     name: string
@@ -63,31 +65,27 @@ export default function WordsPage() {
 
     const fetchDecks = useCallback(async () => {
         try {
-            const response = await fetch('/api/decks/summary')
-            if (!response.ok) {
-                throw new Error('Failed to fetch decks')
-            }
-            const data = await response.json()
+            const data = await apiFetch<DeckSummary[]>('/api/decks/summary')
             setDecks(data)
         } catch (err: any) {
-            console.error('[WordsPage] Error fetching decks:', err)
+            logger.error('WordsPage', 'Error fetching decks', {
+                error: err.message,
+            })
         }
     }, [])
 
     const fetchTrainerCounts = useCallback(async () => {
         try {
-            const response = await fetch(
+            const data = await apiFetch<TrainerPresetCounts>(
                 `/api/trainer/presets/counts?language=${encodeURIComponent(
                     appLanguage,
                 )}`,
             )
-            if (!response.ok) {
-                throw new Error('Failed to fetch trainer counts')
-            }
-            const data = await response.json()
             setTrainerCounts(data)
         } catch (err: any) {
-            console.error('[WordsPage] Error fetching trainer counts:', err)
+            logger.error('WordsPage', 'Error fetching trainer counts', {
+                error: err.message,
+            })
         }
     }, [appLanguage])
 
@@ -99,20 +97,14 @@ export default function WordsPage() {
             if (search.trim()) params.set('search', search.trim())
 
             const url = `/api/words?${params.toString()}`
-            const response = await fetch(url)
-            if (!response.ok) {
-                const errorData = await response.json().catch(() => ({}))
-                const errorMessage =
-                    errorData.error ||
-                    `Failed to fetch words (${response.status})`
-                throw new Error(errorMessage)
-            }
-            const data = await response.json()
+            const data = await apiFetch<NotionWord[]>(url)
             setWords(data)
             // Filtered words are already filtered by the API (language + search)
             setFilteredWords(data)
         } catch (err: any) {
-            console.error('[WordsPage] Error fetching words:', err)
+            logger.error('WordsPage', 'Error fetching words', {
+                error: err.message,
+            })
             setError(err.message || 'An error occurred')
         } finally {
             setLoading(false)
@@ -161,20 +153,13 @@ export default function WordsPage() {
         try {
             setUpdatingLearned((prev) => new Set(prev).add(wordId))
 
-            const response = await fetch('/api/trainer/learned', {
+            await apiFetch('/api/trainer/learned', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
                 body: JSON.stringify({
                     notionPageId: wordId,
                     action: currentLearned ? 'not_learned' : 'learned',
                 }),
             })
-
-            if (!response.ok) {
-                throw new Error('Failed to update learned status')
-            }
 
             // Update local state
             setWords((prev) =>
@@ -186,7 +171,9 @@ export default function WordsPage() {
             // Refresh counts
             await Promise.all([fetchWords(), fetchTrainerCounts()])
         } catch (err: any) {
-            console.error('[WordsPage] Error toggling learned:', err)
+            logger.error('WordsPage', 'Error toggling learned', {
+                error: err.message,
+            })
             setError(err.message || 'Failed to update learned status')
         } finally {
             setUpdatingLearned((prev) => {
@@ -204,25 +191,18 @@ export default function WordsPage() {
 
         try {
             setAddingToDeck(true)
-            console.log(
-                `[DECK] Adding ${selectedWords.size} words to deck: "${deckName}"`,
+            logger.info(
+                'DECK',
+                `Adding ${selectedWords.size} words to deck: "${deckName}"`,
             )
 
-            const response = await fetch('/api/decks/add', {
+            await apiFetch('/api/decks/add', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
                 body: JSON.stringify({
                     notionPageIds: Array.from(selectedWords),
                     deckName: deckName.trim(),
                 }),
             })
-
-            if (!response.ok) {
-                const data = await response.json()
-                throw new Error(data.error || 'Failed to add words to deck')
-            }
 
             // Reload data
             await Promise.all([fetchWords(), fetchDecks()])
@@ -232,7 +212,9 @@ export default function WordsPage() {
             setShowDeckDialog(false)
             setDeckName('')
         } catch (err: any) {
-            console.error('[DECK] Error adding words to deck:', err)
+            logger.error('DECK', 'Error adding words to deck', {
+                error: err.message,
+            })
             setError(err.message || 'Failed to add words to deck')
         } finally {
             setAddingToDeck(false)
@@ -270,7 +252,7 @@ export default function WordsPage() {
                             <option value="English">English</option>
                         </select>
                         <Link href="/app/add">
-                            <button className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-blue-600 transition-colors">
+                            <button className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:opacity-90 transition-colors">
                                 Add Word
                             </button>
                         </Link>
@@ -393,7 +375,7 @@ export default function WordsPage() {
             )}
 
             {error && (
-                <Card className="bg-red-50 border-red-200 text-red-800 mb-4">
+                <Card className="bg-error-background border-error-border text-error-text mb-4">
                     {error}
                 </Card>
             )}
@@ -485,7 +467,7 @@ export default function WordsPage() {
                                         <span
                                             className={`text-xs ${
                                                 word.learned
-                                                    ? 'text-green-600'
+                                                    ? 'text-success'
                                                     : 'text-muted-foreground'
                                             }`}
                                         >

@@ -10,6 +10,7 @@ import {
     validateNotionSchema,
 } from '@/lib/notion'
 import { AddWordRequest, AddWordResponse } from '@/lib/types'
+import { logger } from '@/lib/logger'
 import { randomUUID } from 'crypto'
 
 export const dynamic = 'force-dynamic'
@@ -26,10 +27,9 @@ async function ensureSchemaValidated() {
                 schemaValidated = true
             })
             .catch((err) => {
-                console.error(
-                    '[ADD_WORD] Schema validation failed:',
-                    err.message,
-                )
+                logger.error('ADD_WORD', 'Schema validation failed', {
+                    error: err.message,
+                })
                 // Don't block requests if validation fails
             })
     }
@@ -60,8 +60,10 @@ export async function POST(request: NextRequest) {
         // Step 1: Start
         step = 'start'
         const originalInput = word.trim()
-        console.log(
-            `[ADD_WORD] ${traceId} Start - word: "${originalInput}", targetLanguage: ${targetLanguage}`,
+        logger.info(
+            'ADD_WORD',
+            `Start - word: "${originalInput}", targetLanguage: ${targetLanguage}`,
+            { traceId },
         )
 
         if (!word || typeof word !== 'string') {
@@ -83,23 +85,24 @@ export async function POST(request: NextRequest) {
 
         // Step 2: OpenAI - before call
         step = 'openai_before'
-        console.log(
-            `[ADD_WORD] ${traceId} OpenAI before - model: gpt-4o-mini, word: "${originalInput}"`,
+        logger.info(
+            'ADD_WORD',
+            `OpenAI before - model: gpt-4o-mini, word: "${originalInput}"`,
+            { traceId },
         )
 
         const openaiResponse = await analyzeWord(originalInput)
 
         // Step 3: OpenAI - after call
         step = 'openai_after'
-        console.log(
-            `[ADD_WORD] ${traceId} OpenAI after - detected_language: ${openaiResponse.detected_language}, pos: ${openaiResponse.pos}, ` +
-                `lemma: "${
-                    openaiResponse.normalized.lemma || ''
-                }", infinitive: "${
-                    openaiResponse.normalized.infinitive || ''
-                }", ` +
-                `confidence: ${openaiResponse.confidence}`,
-        )
+        logger.info('ADD_WORD', 'OpenAI after', {
+            traceId,
+            detected_language: openaiResponse.detected_language,
+            pos: openaiResponse.pos,
+            lemma: openaiResponse.normalized.lemma || '',
+            infinitive: openaiResponse.normalized.infinitive || '',
+            confidence: openaiResponse.confidence,
+        })
 
         // Step 4: Compute final language + key
         step = 'compute_lang'
@@ -126,31 +129,40 @@ export async function POST(request: NextRequest) {
         // Determine if correction was applied
         const corrected =
             finalWord.toLowerCase() !== originalInput.toLowerCase()
-        console.log(
-            `[ADD_WORD] ${traceId} Normalization - input: "${originalInput}", corrected: "${finalWord}", corrected: ${corrected}`,
-        )
+        logger.info('ADD_WORD', 'Normalization', {
+            traceId,
+            input: originalInput,
+            corrected: finalWord,
+            wasCorrected: corrected,
+        })
 
         const key = buildKey(finalLanguage, finalWord)
-        console.log(
-            `[ADD_WORD] ${traceId} Compute lang/key - finalLanguage: ${finalLanguage}, key: "${key}", finalWord: "${finalWord}"`,
-        )
+        logger.info('ADD_WORD', 'Compute lang/key', {
+            traceId,
+            finalLanguage,
+            key,
+            finalWord,
+        })
 
         // Step 5: Notion - before query
         step = 'notion_query_before'
-        console.log(`[ADD_WORD] ${traceId} Notion query before - key: "${key}"`)
+        logger.info('ADD_WORD', `Notion query before - key: "${key}"`, {
+            traceId,
+        })
 
         const existingWord = await findWordByKey(key)
 
         // Step 6: Notion - after query
         step = 'notion_query_after'
         if (existingWord) {
-            console.log(
-                `[ADD_WORD] ${traceId} Notion query after - found: true, pageId: ${existingWord.id}`,
-            )
+            logger.info('ADD_WORD', 'Notion query after - found: true', {
+                traceId,
+                pageId: existingWord.id,
+            })
         } else {
-            console.log(
-                `[ADD_WORD] ${traceId} Notion query after - found: false`,
-            )
+            logger.info('ADD_WORD', 'Notion query after - found: false', {
+                traceId,
+            })
         }
 
         // Step 7: Notion - before create/update
@@ -162,11 +174,10 @@ export async function POST(request: NextRequest) {
         if (finalLanguage === 'pt' && openaiResponse.pos === 'verb') {
             propertyNames.push('Voce', 'ele/ela', 'eles/elas', 'Nos')
         }
-        console.log(
-            `[ADD_WORD] ${traceId} Notion ${operation} before - properties: ${propertyNames.join(
-                ', ',
-            )}`,
-        )
+        logger.info('ADD_WORD', `Notion ${operation} before`, {
+            traceId,
+            properties: propertyNames,
+        })
 
         if (existingWord) {
             await updateWord(existingWord.id, finalLanguage, openaiResponse)
@@ -184,9 +195,10 @@ export async function POST(request: NextRequest) {
 
         // Step 8: Notion - after create/update
         step = 'notion_write_after'
-        console.log(
-            `[ADD_WORD] ${traceId} Notion ${operation} after - status: ok, pageId: ${pageId}`,
-        )
+        logger.info('ADD_WORD', `Notion ${operation} after - status: ok`, {
+            traceId,
+            pageId,
+        })
 
         const response: AddWordResponse = {
             status,
@@ -196,15 +208,19 @@ export async function POST(request: NextRequest) {
             pos: openaiResponse.pos,
         }
 
-        console.log(
-            `[ADD_WORD] ${traceId} Success - status: ${status}, key: "${key}", lang: ${finalLanguage}, pos: ${openaiResponse.pos}`,
-        )
+        logger.info('ADD_WORD', 'Success', {
+            traceId,
+            status,
+            key,
+            lang: finalLanguage,
+            pos: openaiResponse.pos,
+        })
 
         return NextResponse.json(response)
     } catch (error: any) {
         // Step 9: Error handler
         step = 'error'
-        const errorMessage = error.message || 'Internal server error'
+        let errorMessage = error.message || 'Internal server error'
         const errorDetails =
             error.response?.data || error.body || error.toString()
         const truncatedDetails =
@@ -212,10 +228,30 @@ export async function POST(request: NextRequest) {
                 ? errorDetails.substring(0, 500)
                 : JSON.stringify(errorDetails).substring(0, 500)
 
-        console.error(
-            `[ADD_WORD] ${traceId} Error at step "${step}" - message: ${errorMessage}` +
-                (errorDetails ? `, details: ${truncatedDetails}` : ''),
-        )
+        // Provide user-friendly error messages for common network errors
+        if (
+            errorMessage.includes('ECONNRESET') ||
+            errorMessage.includes('ETIMEDOUT') ||
+            errorMessage.includes('timeout')
+        ) {
+            errorMessage =
+                'Network error: Unable to connect to Notion. Please try again in a moment.'
+        } else if (errorMessage.includes('rate_limit') || errorMessage.includes('429')) {
+            errorMessage =
+                'Rate limit exceeded. Please wait a moment and try again.'
+        } else if (errorMessage.includes('unauthorized') || errorMessage.includes('401')) {
+            errorMessage =
+                'Authentication error: Please check your Notion token in environment variables.'
+        } else if (errorMessage.includes('not found') || errorMessage.includes('404')) {
+            errorMessage =
+                'Notion database not found. Please check your database ID in environment variables.'
+        }
+
+        logger.error('ADD_WORD', `Error at step "${step}"`, {
+            traceId,
+            error: error.message || errorMessage,
+            details: truncatedDetails,
+        })
 
         const statusCode = error.status || error.statusCode || 500
         return NextResponse.json(

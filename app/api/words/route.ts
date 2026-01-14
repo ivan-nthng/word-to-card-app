@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { AUTH_ENABLED } from '@/lib/config'
 import { getWords } from '@/lib/notion'
+import { logger } from '@/lib/logger'
 
 export const dynamic = 'force-dynamic'
 
@@ -31,7 +32,7 @@ export async function GET(request: NextRequest) {
 
         return NextResponse.json(words)
     } catch (error: any) {
-        console.error('[WORDS] Error fetching words:', error)
+        logger.error('WORDS', 'Error fetching words', { error: error.message })
         const errorMessage = error.message || 'Internal server error'
         // Provide more specific error messages
         if (errorMessage.includes('Missing required environment variable')) {

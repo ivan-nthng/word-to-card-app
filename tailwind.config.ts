@@ -24,6 +24,19 @@ const config: Config = {
                 card: 'rgb(var(--color-card) / <alpha-value>)',
                 'card-foreground':
                     'rgb(var(--color-card-foreground) / <alpha-value>)',
+                error: 'rgb(var(--color-error) / <alpha-value>)',
+                'error-background':
+                    'rgb(var(--color-error-background) / <alpha-value>)',
+                'error-border':
+                    'rgb(var(--color-error-border) / <alpha-value>)',
+                'error-text': 'rgb(var(--color-error-text) / <alpha-value>)',
+                success: 'rgb(var(--color-success) / <alpha-value>)',
+                'success-background':
+                    'rgb(var(--color-success-background) / <alpha-value>)',
+                'success-border':
+                    'rgb(var(--color-success-border) / <alpha-value>)',
+                'success-text':
+                    'rgb(var(--color-success-text) / <alpha-value>)',
             },
             borderRadius: {
                 DEFAULT: 'var(--radius)',

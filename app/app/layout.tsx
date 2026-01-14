@@ -1,6 +1,7 @@
 import { getSession } from '@/lib/auth'
 import { redirect } from 'next/navigation'
 import { AUTH_ENABLED } from '@/lib/config'
+import { logger } from '@/lib/logger'
 
 export const dynamic = 'force-dynamic'
 
@@ -19,7 +20,7 @@ export default async function AppLayout({
       }
     } catch (error) {
       // If auth check fails, allow access (graceful degradation)
-      console.error('Error checking session in AppLayout:', error)
+      logger.error('AUTH', 'Error checking session in AppLayout', { error: error instanceof Error ? error.message : String(error) })
     }
   }
 

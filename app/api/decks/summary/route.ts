@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { AUTH_ENABLED } from '@/lib/config'
 import { getDeckSummary } from '@/lib/notion'
+import { logger } from '@/lib/logger'
 
 export const dynamic = 'force-dynamic'
 
@@ -20,7 +21,9 @@ export async function GET(request: NextRequest) {
         const summary = await getDeckSummary()
         return NextResponse.json(summary)
     } catch (error: any) {
-        console.error('[DECK] Error fetching deck summary:', error)
+        logger.error('DECK', 'Error fetching deck summary', {
+            error: error.message,
+        })
         return NextResponse.json(
             { error: error.message || 'Internal server error' },
             { status: 500 },

@@ -5,6 +5,7 @@ import { PageHeader } from '@/app/ui/PageHeader'
 import { Input } from '@/app/ui/Input'
 import { Button } from '@/app/ui/Button'
 import { Card } from '@/app/ui/Card'
+import { apiFetch } from '@/lib/client'
 
 export default function AddWordPage() {
     const [word, setWord] = useState('')
@@ -26,22 +27,19 @@ export default function AddWordPage() {
         setResult(null)
 
         try {
-            const response = await fetch('/api/add-word', {
+            const data = await apiFetch<{
+                status: 'created' | 'updated'
+                key: string
+                finalWord: string
+                lang: 'pt' | 'en'
+                pos: 'verb' | 'noun' | 'adjective' | 'other'
+            }>('/api/add-word', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
                 body: JSON.stringify({
                     word,
                     targetLanguage,
                 }),
             })
-
-            const data = await response.json()
-
-            if (!response.ok) {
-                throw new Error(data.error || 'Failed to add word')
-            }
 
             setResult(data)
             setWord('')
@@ -71,7 +69,7 @@ export default function AddWordPage() {
                     <div>
                         <label className="block text-sm font-medium mb-1 text-foreground">
                             Target Language{' '}
-                            <span className="text-red-500">*</span>
+                            <span className="text-error">*</span>
                         </label>
                         <select
                             value={targetLanguage}
@@ -88,7 +86,7 @@ export default function AddWordPage() {
                     </div>
 
                     {error && (
-                        <div className="p-3 bg-red-50 border border-red-200 rounded-md text-red-800 text-sm">
+                        <div className="p-3 bg-error-background border border-error-border rounded-md text-error-text text-sm">
                             {error}
                         </div>
                     )}
@@ -100,13 +98,13 @@ export default function AddWordPage() {
             </Card>
 
             {result && (
-                <Card className="bg-green-50 border-green-200">
-                    <h3 className="font-semibold text-green-900 mb-2">
+                <Card className="bg-success-background border-success-border">
+                    <h3 className="font-semibold text-success-text mb-2">
                         Word{' '}
                         {result.status === 'created' ? 'Created' : 'Updated'}{' '}
                         Successfully
                     </h3>
-                    <div className="space-y-1 text-sm text-green-800">
+                    <div className="space-y-1 text-sm text-success-text">
                         <p>
                             <strong>Word:</strong> {result.finalWord}
                         </p>

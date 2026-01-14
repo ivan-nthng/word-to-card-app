@@ -7,6 +7,8 @@ import { PageHeader } from '@/app/ui/PageHeader'
 import { Card } from '@/app/ui/Card'
 import { Button } from '@/app/ui/Button'
 import { NotionWord } from '@/lib/types'
+import { logger } from '@/lib/logger'
+import { apiFetch } from '@/lib/client'
 
 interface TrainerSettings {
     frontMode:
@@ -113,26 +115,17 @@ function TrainerContent() {
             setLoading(true)
             setError('')
             shuffledRef.current = false
-            console.log(
-                `[TRAINER] Fetching words - presetId: ${presetId}, language: ${language}`,
-            )
+            logger.info('TRAINER', `Fetching words - presetId: ${presetId}, language: ${language}`)
 
-            const response = await fetch(
+            const data = await apiFetch<NotionWord[]>(
                 `/api/trainer/${presetId}/words?language=${encodeURIComponent(
                     language,
                 )}`,
             )
-            if (!response.ok) {
-                throw new Error('Failed to fetch trainer words')
-            }
-
-            const data = await response.json()
-            console.log(
-                `[TRAINER] Loaded ${data.length} words for preset: ${presetId}`,
-            )
+            logger.info('TRAINER', `Loaded ${data.length} words for preset: ${presetId}`)
             setWords(data)
         } catch (err: any) {
-            console.error(`[TRAINER] Error fetching words:`, err)
+            logger.error('TRAINER', 'Error fetching words', { error: err.message })
             setError(err.message || 'An error occurred')
         } finally {
             setLoading(false)
@@ -372,23 +365,14 @@ function TrainerContent() {
         if (!currentWord) return
 
         try {
-            console.log(
-                `[TRAINER] review action pageId=${currentWord.id} action=learned`,
-            )
-            const response = await fetch('/api/trainer/learned', {
+            logger.info('TRAINER', 'review action', { pageId: currentWord.id, action: 'learned' })
+            await apiFetch('/api/trainer/learned', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
                 body: JSON.stringify({
                     notionPageId: currentWord.id,
                     action: 'learned',
                 }),
             })
-
-            if (!response.ok) {
-                throw new Error('Failed to mark word as learned')
-            }
 
             // Remove from queue if it no longer matches the filter
             const newShuffled = shuffledWords.filter(
@@ -405,7 +389,7 @@ function TrainerContent() {
 
             setFlipped(false)
         } catch (err: any) {
-            console.error(`[TRAINER] Error marking word as learned:`, err)
+            logger.error('TRAINER', 'Error marking word as learned', { error: err.message })
             setError(err.message || 'Failed to mark as learned')
         }
     }
@@ -415,23 +399,14 @@ function TrainerContent() {
         if (!currentWord) return
 
         try {
-            console.log(
-                `[TRAINER] review action pageId=${currentWord.id} action=not_learned`,
-            )
-            const response = await fetch('/api/trainer/learned', {
+            logger.info('TRAINER', 'review action', { pageId: currentWord.id, action: 'not_learned' })
+            await apiFetch('/api/trainer/learned', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
                 body: JSON.stringify({
                     notionPageId: currentWord.id,
                     action: 'not_learned',
                 }),
             })
-
-            if (!response.ok) {
-                throw new Error('Failed to mark word as not learned')
-            }
 
             // For "learned" preset, remove from queue if marked not learned
             if (presetId === 'learned') {
@@ -459,7 +434,7 @@ function TrainerContent() {
 
             setFlipped(false)
         } catch (err: any) {
-            console.error(`[TRAINER] Error marking word as not learned:`, err)
+            logger.error('TRAINER', 'Error marking word as not learned', { error: err.message })
             setError(err.message || 'Failed to mark as not learned')
         }
     }
@@ -496,7 +471,7 @@ function TrainerContent() {
                     title={`Trainer: ${presetLabels[presetId] || presetId}`}
                     backHref="/app/words"
                 />
-                <Card className="bg-red-50 border-red-200 text-red-800">
+                <Card className="bg-error-background border-error-border text-error-text">
                     {error}
                 </Card>
             </div>
