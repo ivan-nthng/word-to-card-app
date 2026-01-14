@@ -10,6 +10,8 @@ export const metadata: Metadata = {
   description: 'Private vocabulary web service',
 }
 
+export const dynamic = 'force-dynamic'
+
 export default function RootLayout({
   children,
 }: {
