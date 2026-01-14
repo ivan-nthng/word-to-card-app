@@ -28,9 +28,3 @@ export const getGoogleClientId = createEnvGetter('GOOGLE_CLIENT_ID')
 export const getGoogleClientSecret = createEnvGetter('GOOGLE_CLIENT_SECRET')
 export const getNextAuthSecret = createEnvGetter('NEXTAUTH_SECRET')
 export const getAllowedEmail = createEnvGetter('ALLOWED_EMAIL')
-
-// For backward compatibility, export as getters that validate on access
-// These will throw at runtime if env vars are missing, but won't break the build
-export const OPENAI_API_KEY = getOpenAIApiKey()
-export const NOTION_TOKEN = getNotionToken()
-export const NOTION_DATABASE_ID = getNotionDatabaseId()
