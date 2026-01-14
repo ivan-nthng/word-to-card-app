@@ -3,12 +3,14 @@ import { OpenAIResponse } from './types'
 import { OPENAI_API_KEY } from './env'
 
 const openai = new OpenAI({
-  apiKey: OPENAI_API_KEY,
+    apiKey: OPENAI_API_KEY,
 })
 
 const SYSTEM_PROMPT = `You are a linguistic analysis tool. Analyze the input word and return ONLY a valid JSON object with the exact structure specified. Do not include any explanations, markdown formatting, or additional text. Return pure JSON only.`
 
-const USER_PROMPT_TEMPLATE = (word: string) => `Analyze the word "${word}" and return a JSON object with this exact structure:
+const USER_PROMPT_TEMPLATE = (
+    word: string,
+) => `Analyze the word "${word}" and return a JSON object with this exact structure:
 {
   "detected_language": "pt|en|ru",
   "pos": "verb|noun|adjective|other",
@@ -26,42 +28,43 @@ const USER_PROMPT_TEMPLATE = (word: string) => `Analyze the word "${word}" and r
 Rules:
 - detected_language: "pt" for Brazilian Portuguese, "en" for English, "ru" for Russian
 - pos: "verb", "noun", "adjective", or "other"
-- normalized.lemma: base form for nouns/adjectives
-- normalized.infinitive: infinitive form for verbs
+- normalized.lemma: base form (dictionary form) for nouns/adjectives. If the input contains a typo or misspelling, correct it to the most likely intended word. If no correction needed, use the normalized base form.
+- normalized.infinitive: infinitive form for verbs. If the input contains a typo or misspelling, correct it to the most likely intended infinitive form. If no correction needed, use the normalized infinitive form.
 - translation_ru: Russian translation
 - verb forms: only fill if detected_language is "pt" and pos is "verb"
 - confidence: number between 0.0 and 1.0
-- All keys must exist; use empty strings for missing values`
+- All keys must exist; use empty strings for missing values
+- Typo correction: If you detect a typo or misspelling, correct it in the normalized fields. The normalized fields should always contain the corrected, dictionary-correct form of the word.`
 
 export async function analyzeWord(word: string): Promise<OpenAIResponse> {
-  try {
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: USER_PROMPT_TEMPLATE(word) },
-      ],
-      response_format: { type: 'json_object' },
-      temperature: 0.3,
-    })
+    try {
+        const response = await openai.chat.completions.create({
+            model: 'gpt-4o-mini',
+            messages: [
+                { role: 'system', content: SYSTEM_PROMPT },
+                { role: 'user', content: USER_PROMPT_TEMPLATE(word) },
+            ],
+            response_format: { type: 'json_object' },
+            temperature: 0.3,
+        })
 
-    const content = response.choices[0]?.message?.content
-    if (!content) {
-      throw new Error('OpenAI returned empty response')
+        const content = response.choices[0]?.message?.content
+        if (!content) {
+            throw new Error('OpenAI returned empty response')
+        }
+
+        const parsed = JSON.parse(content) as OpenAIResponse
+
+        // Validate required keys exist
+        if (!parsed.detected_language || !parsed.pos) {
+            throw new Error('OpenAI response missing required keys')
+        }
+
+        return parsed
+    } catch (error) {
+        if (error instanceof SyntaxError) {
+            throw new Error('OpenAI returned invalid JSON')
+        }
+        throw error
     }
-
-    const parsed = JSON.parse(content) as OpenAIResponse
-
-    // Validate required keys exist
-    if (!parsed.detected_language || !parsed.pos) {
-      throw new Error('OpenAI response missing required keys')
-    }
-
-    return parsed
-  } catch (error) {
-    if (error instanceof SyntaxError) {
-      throw new Error('OpenAI returned invalid JSON')
-    }
-    throw error
-  }
 }
