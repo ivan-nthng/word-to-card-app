@@ -102,7 +102,9 @@ export default function WordsPage() {
             const response = await fetch(url)
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({}))
-                const errorMessage = errorData.error || `Failed to fetch words (${response.status})`
+                const errorMessage =
+                    errorData.error ||
+                    `Failed to fetch words (${response.status})`
                 throw new Error(errorMessage)
             }
             const data = await response.json()
