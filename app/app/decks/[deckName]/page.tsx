@@ -102,6 +102,10 @@ function StudyDeckContent() {
 
 
     useEffect(() => {
+        fetchDeckWords()
+    }, [fetchDeckWords])
+
+    useEffect(() => {
         // Filter active words and shuffle once on load
         const active = allWords.filter((w) => !w.learned)
         setActiveWords(active)
