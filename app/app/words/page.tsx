@@ -965,43 +965,99 @@ export default function WordsPage() {
             </div>
 
             {/* Search + Filters */}
-            <div className="mb-4 flex items-center gap-3 flex-wrap">
-                <div className="relative flex-1 max-w-[200px] group focus-within:max-w-[400px] transition-all duration-200">
-                    <input
-                        type="text"
-                        placeholder="Search words or translations..."
-                        value={search}
-                        onChange={(e) => setSearch(e.target.value)}
-                        className="w-full px-3 py-2 border border-border rounded-md bg-input text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm"
-                    />
-                </div>
-
-                {/* Active Filter Chips */}
-                {typoFilter !== 'All' && (
-                    <div className="relative group">
-                        <div
+            <div className="mb-4 flex items-center justify-between gap-3 flex-wrap">
+                {/* Left group: Add filters button + filter chips */}
+                <div className="flex items-center gap-2 flex-wrap">
+                    {/* Add Filters Button */}
+                    <div className="relative">
+                        <button
                             onClick={() => {
-                                setActiveFilterDropdown(
-                                    activeFilterDropdown === 'type'
-                                        ? null
-                                        : 'type',
-                                )
-                                setShowAddFiltersDropdown(false)
+                                setShowAddFiltersDropdown(!showAddFiltersDropdown)
+                                setActiveFilterDropdown(null)
                             }}
-                            className="flex items-center gap-1.5 px-3 py-1.5 bg-muted border border-border rounded-md text-sm cursor-pointer hover:bg-muted/80"
+                            className="flex items-center gap-1.5 px-3 py-2 border border-border rounded-lg bg-input text-foreground text-sm hover:bg-muted transition-colors"
                         >
-                            <span>Type: {typoFilter}</span>
-                            <button
-                                onClick={(e) => {
-                                    e.stopPropagation()
-                                    setTypoFilter('All')
-                                    setActiveFilterDropdown(null)
-                                }}
-                                className="ml-1 text-muted-foreground hover:text-foreground"
+                            <span className="text-base leading-none">+</span>
+                            <span>Add filters</span>
+                        </button>
+                        {showAddFiltersDropdown && (
+                            <div
+                                onClick={(e) => e.stopPropagation()}
+                                className="absolute top-full left-0 mt-1 bg-card border border-border rounded-lg shadow-lg z-20 min-w-[140px]"
                             >
-                                ×
-                            </button>
-                        </div>
+                                {typoFilter === 'All' && (
+                                    <button
+                                        onClick={() => {
+                                            setShowAddFiltersDropdown(false)
+                                            setActiveFilterDropdown('type')
+                                            setTypoFilter('Verbo')
+                                        }}
+                                        className="w-full px-3 py-2 text-left text-sm hover:bg-muted transition-colors"
+                                    >
+                                        Type
+                                    </button>
+                                )}
+                                {learnedFilter === 'All' && (
+                                    <button
+                                        onClick={() => {
+                                            setShowAddFiltersDropdown(false)
+                                            setActiveFilterDropdown('learned')
+                                            setLearnedFilter('Not learned')
+                                        }}
+                                        className="w-full px-3 py-2 text-left text-sm hover:bg-muted transition-colors"
+                                    >
+                                        Status
+                                    </button>
+                                )}
+                                {dateSort === 'newest' && (
+                                    <button
+                                        onClick={() => {
+                                            setShowAddFiltersDropdown(false)
+                                            setActiveFilterDropdown('sort')
+                                            setDateSort('oldest')
+                                        }}
+                                        className="w-full px-3 py-2 text-left text-sm hover:bg-muted transition-colors"
+                                    >
+                                        Date added
+                                    </button>
+                                )}
+                                {typoFilter !== 'All' &&
+                                    learnedFilter !== 'All' &&
+                                    dateSort !== 'newest' && (
+                                        <div className="px-3 py-2 text-xs text-muted-foreground border-t border-border">
+                                            All filters added
+                                        </div>
+                                    )}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Active Filter Chips */}
+                    {typoFilter !== 'All' && (
+                        <div className="relative group">
+                            <div
+                                onClick={() => {
+                                    setActiveFilterDropdown(
+                                        activeFilterDropdown === 'type'
+                                            ? null
+                                            : 'type',
+                                    )
+                                    setShowAddFiltersDropdown(false)
+                                }}
+                                className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 border border-blue-200 rounded-lg text-sm cursor-pointer hover:bg-blue-100 transition-colors"
+                            >
+                                <span className="text-blue-700">Type: {typoFilter}</span>
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation()
+                                        setTypoFilter('All')
+                                        setActiveFilterDropdown(null)
+                                    }}
+                                    className="ml-1 text-blue-600 hover:text-blue-800 text-base leading-none"
+                                >
+                                    ×
+                                </button>
+                            </div>
                         {activeFilterDropdown === 'type' && (
                             <div
                                 onClick={(e) => e.stopPropagation()}
@@ -1047,31 +1103,31 @@ export default function WordsPage() {
                         )}
                     </div>
                 )}
-                {learnedFilter !== 'All' && (
-                    <div className="relative group">
-                        <div
-                            onClick={() => {
-                                setActiveFilterDropdown(
-                                    activeFilterDropdown === 'learned'
-                                        ? null
-                                        : 'learned',
-                                )
-                                setShowAddFiltersDropdown(false)
-                            }}
-                            className="flex items-center gap-1.5 px-3 py-1.5 bg-muted border border-border rounded-md text-sm cursor-pointer hover:bg-muted/80"
-                        >
-                            <span>Status: {learnedFilter}</span>
-                            <button
-                                onClick={(e) => {
-                                    e.stopPropagation()
-                                    setLearnedFilter('All')
-                                    setActiveFilterDropdown(null)
+                    {learnedFilter !== 'All' && (
+                        <div className="relative group">
+                            <div
+                                onClick={() => {
+                                    setActiveFilterDropdown(
+                                        activeFilterDropdown === 'learned'
+                                            ? null
+                                            : 'learned',
+                                    )
+                                    setShowAddFiltersDropdown(false)
                                 }}
-                                className="ml-1 text-muted-foreground hover:text-foreground"
+                                className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 border border-blue-200 rounded-lg text-sm cursor-pointer hover:bg-blue-100 transition-colors"
                             >
-                                ×
-                            </button>
-                        </div>
+                                <span className="text-blue-700">Status: {learnedFilter}</span>
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation()
+                                        setLearnedFilter('All')
+                                        setActiveFilterDropdown(null)
+                                    }}
+                                    className="ml-1 text-blue-600 hover:text-blue-800 text-base leading-none"
+                                >
+                                    ×
+                                </button>
+                            </div>
                         {activeFilterDropdown === 'learned' && (
                             <div
                                 onClick={(e) => e.stopPropagation()}
@@ -1107,32 +1163,32 @@ export default function WordsPage() {
                             </div>
                         )}
                     </div>
-                )}
-                {dateSort !== 'newest' && (
-                    <div className="relative group">
-                        <div
-                            onClick={() => {
-                                setActiveFilterDropdown(
-                                    activeFilterDropdown === 'sort'
-                                        ? null
-                                        : 'sort',
-                                )
-                                setShowAddFiltersDropdown(false)
-                            }}
-                            className="flex items-center gap-1.5 px-3 py-1.5 bg-muted border border-border rounded-md text-sm cursor-pointer hover:bg-muted/80"
-                        >
-                            <span>Sort: {dateSort === 'oldest' ? 'Oldest' : 'Newest'}</span>
-                            <button
-                                onClick={(e) => {
-                                    e.stopPropagation()
-                                    setDateSort('newest')
-                                    setActiveFilterDropdown(null)
+                    )}
+                    {dateSort !== 'newest' && (
+                        <div className="relative group">
+                            <div
+                                onClick={() => {
+                                    setActiveFilterDropdown(
+                                        activeFilterDropdown === 'sort'
+                                            ? null
+                                            : 'sort',
+                                    )
+                                    setShowAddFiltersDropdown(false)
                                 }}
-                                className="ml-1 text-muted-foreground hover:text-foreground"
+                                className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 border border-blue-200 rounded-lg text-sm cursor-pointer hover:bg-blue-100 transition-colors"
                             >
-                                ×
-                            </button>
-                        </div>
+                                <span className="text-blue-700">Sort: {dateSort === 'oldest' ? 'Oldest' : 'Newest'}</span>
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation()
+                                        setDateSort('newest')
+                                        setActiveFilterDropdown(null)
+                                    }}
+                                    className="ml-1 text-blue-600 hover:text-blue-800 text-base leading-none"
+                                >
+                                    ×
+                                </button>
+                            </div>
                         {activeFilterDropdown === 'sort' && (
                             <div
                                 onClick={(e) => e.stopPropagation()}
@@ -1158,71 +1214,36 @@ export default function WordsPage() {
                                 </button>
                             </div>
                         )}
-                    </div>
-                )}
-
-                {/* Add Filters Button */}
-                <div className="relative">
-                    <button
-                        onClick={() => {
-                            setShowAddFiltersDropdown(!showAddFiltersDropdown)
-                            setActiveFilterDropdown(null)
-                        }}
-                        className="flex items-center gap-1.5 px-3 py-2 border border-border rounded-md bg-input text-foreground text-sm hover:bg-muted transition-colors"
-                    >
-                        <span>Add filters</span>
-                        <span className="text-xs">▼</span>
-                    </button>
-                    {showAddFiltersDropdown && (
-                        <div
-                            onClick={(e) => e.stopPropagation()}
-                            className="absolute top-full right-0 mt-1 bg-card border border-border rounded-lg shadow-lg z-20 min-w-[140px]"
-                        >
-                            {typoFilter === 'All' && (
-                                <button
-                                    onClick={() => {
-                                        setShowAddFiltersDropdown(false)
-                                        setActiveFilterDropdown('type')
-                                        setTypoFilter('Verbo')
-                                    }}
-                                    className="w-full px-3 py-2 text-left text-sm hover:bg-muted transition-colors"
-                                >
-                                    Type
-                                </button>
-                            )}
-                            {learnedFilter === 'All' && (
-                                <button
-                                    onClick={() => {
-                                        setShowAddFiltersDropdown(false)
-                                        setActiveFilterDropdown('learned')
-                                        setLearnedFilter('Not learned')
-                                    }}
-                                    className="w-full px-3 py-2 text-left text-sm hover:bg-muted transition-colors"
-                                >
-                                    Status
-                                </button>
-                            )}
-                            {dateSort === 'newest' && (
-                                <button
-                                    onClick={() => {
-                                        setShowAddFiltersDropdown(false)
-                                        setActiveFilterDropdown('sort')
-                                        setDateSort('oldest')
-                                    }}
-                                    className="w-full px-3 py-2 text-left text-sm hover:bg-muted transition-colors"
-                                >
-                                    Date added
-                                </button>
-                            )}
-                            {typoFilter !== 'All' &&
-                                learnedFilter !== 'All' &&
-                                dateSort !== 'newest' && (
-                                    <div className="px-3 py-2 text-xs text-muted-foreground border-t border-border">
-                                        All filters added
-                                    </div>
-                                )}
                         </div>
                     )}
+                </div>
+
+                {/* Right group: Search input */}
+                <div className="relative max-w-[200px] group focus-within:max-w-[400px] transition-all duration-200 ml-auto">
+                    <div className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none">
+                        <svg
+                            width="16"
+                            height="16"
+                            viewBox="0 0 16 16"
+                            fill="none"
+                            xmlns="http://www.w3.org/2000/svg"
+                        >
+                            <path
+                                d="M7.333 12.667A5.333 5.333 0 1 0 7.333 2a5.333 5.333 0 0 0 0 10.667ZM14 14l-2.9-2.9"
+                                stroke="currentColor"
+                                strokeWidth="1.5"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                            />
+                        </svg>
+                    </div>
+                    <input
+                        type="text"
+                        placeholder="Search words"
+                        value={search}
+                        onChange={(e) => setSearch(e.target.value)}
+                        className="w-full pl-9 pr-3 py-2 rounded-lg bg-slate-100 text-foreground placeholder:text-muted-foreground focus:outline-none focus:bg-slate-200 focus:ring-2 focus:ring-primary/20 transition-all text-sm"
+                    />
                 </div>
 
                 {deckFilter && (
