@@ -6,9 +6,16 @@ import Link from 'next/link'
 import { PageHeader } from '@/app/ui/PageHeader'
 import { Card } from '@/app/ui/Card'
 import { Button } from '@/app/ui/Button'
+import { LanguageDropdown } from '@/app/ui/LanguageDropdown'
 import { NotionWord } from '@/lib/types'
 import { logger } from '@/lib/logger'
 import { apiFetch } from '@/lib/client'
+import {
+    getLearningLanguageClient,
+    setLearningLanguageClient,
+    mapLearningLanguageToNotion,
+    type LearningLanguage,
+} from '@/lib/learning-language'
 
 interface TrainerSettings {
     frontMode:
@@ -43,19 +50,17 @@ function shuffleArray<T>(array: T[]): T[] {
 }
 
 function getTrainerSettings(presetId: string): TrainerSettings {
+    // Always default frontMode to 'word' (Portuguese word) - do not remember previous selection
+    // 'word' shows the Portuguese/English word, 'translation_ru' shows Original (Russian)
+    const defaultSettings = { frontMode: 'word' as const, backMode: 'translation_ru' as const }
+    
     if (typeof window === 'undefined') {
-        return { frontMode: 'word', backMode: 'translation_ru' }
+        return defaultSettings
     }
 
-    const stored = localStorage.getItem(`${TRAINER_SETTINGS_PREFIX}${presetId}`)
-    if (stored) {
-        try {
-            return JSON.parse(stored) as TrainerSettings
-        } catch {
-            return { frontMode: 'word', backMode: 'translation_ru' }
-        }
-    }
-    return { frontMode: 'word', backMode: 'translation_ru' }
+    // For now, always return default (don't load from localStorage for frontMode)
+    // This ensures Portuguese is always preselected
+    return defaultSettings
 }
 
 function saveTrainerSettings(presetId: string, settings: TrainerSettings) {
@@ -86,9 +91,11 @@ function TrainerContent() {
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState('')
     const [showSettings, setShowSettings] = useState(false)
-    const [settings, setSettings] = useState<TrainerSettings>(() =>
-        getTrainerSettings(presetId),
-    )
+    const [settings, setSettings] = useState<TrainerSettings>(() => {
+        const defaultSettings = { frontMode: 'word' as const, backMode: 'translation_ru' as const }
+        // Always default to Portuguese (frontMode: 'word') - don't load from localStorage
+        return defaultSettings
+    })
     const shuffledRef = useRef(false)
 
 
@@ -452,7 +459,7 @@ function TrainerContent() {
 
     if (loading) {
         return (
-            <div className="max-w-2xl mx-auto px-4 py-8">
+            <div className="min-h-[100dvh] max-w-2xl mx-auto px-4 py-8">
                 <PageHeader
                     title={`Trainer: ${presetLabels[presetId] || presetId}`}
                     backHref="/app/words"
@@ -466,7 +473,7 @@ function TrainerContent() {
 
     if (error && shuffledWords.length === 0) {
         return (
-            <div className="max-w-2xl mx-auto px-4 py-8">
+            <div className="min-h-[100dvh] max-w-2xl mx-auto px-4 py-8">
                 <PageHeader
                     title={`Trainer: ${presetLabels[presetId] || presetId}`}
                     backHref="/app/words"
@@ -480,7 +487,7 @@ function TrainerContent() {
 
     if (shuffledWords.length === 0) {
         return (
-            <div className="max-w-2xl mx-auto px-4 py-8">
+            <div className="min-h-[100dvh] max-w-2xl mx-auto px-4 py-8">
                 <PageHeader
                     title={`Trainer: ${presetLabels[presetId] || presetId}`}
                     backHref="/app/words"
@@ -501,12 +508,19 @@ function TrainerContent() {
     }
 
     return (
-        <div className="max-w-2xl mx-auto px-4 py-8">
+        <div className="min-h-[100dvh] max-w-2xl mx-auto px-4 py-8">
             <PageHeader
                 title={`Trainer: ${presetLabels[presetId] || presetId}`}
                 backHref="/app/words"
                 actions={
                     <div className="flex gap-2 items-center">
+                        <LanguageDropdown
+                            onLanguageChange={(lang) => {
+                                setLearningLanguageClient(lang)
+                                // Reload words when language changes
+                                fetchWords()
+                            }}
+                        />
                         <Button
                             variant="outline"
                             onClick={() => setShowSettings(!showSettings)}

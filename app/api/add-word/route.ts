@@ -13,6 +13,12 @@ import {
 import { AddWordRequest, AddWordResponse } from '@/lib/types'
 import { logger } from '@/lib/logger'
 import { randomUUID } from 'crypto'
+import {
+    getLearningLanguageFromRequest,
+    mapLearningLanguageToNotion,
+    DEFAULT_LEARNING_LANGUAGE,
+    type LearningLanguage,
+} from '@/lib/learning-language'
 
 export const dynamic = 'force-dynamic'
 
@@ -56,14 +62,21 @@ export async function POST(request: NextRequest) {
         }
 
         const body: AddWordRequest = await request.json()
-        const { word, targetLanguage } = body
+        const { word, learningLanguage: bodyLearningLanguage } = body
+
+        // Get learning language from request body or cookie (fallback)
+        const cookieHeader = request.headers.get('cookie')
+        const learningLanguage: LearningLanguage =
+            (bodyLearningLanguage as LearningLanguage) ||
+            getLearningLanguageFromRequest(cookieHeader) ||
+            DEFAULT_LEARNING_LANGUAGE
 
         // Step 1: Start
         step = 'start'
         const originalInput = word.trim()
         logger.info(
             'ADD_WORD',
-            `Start - word: "${originalInput}", targetLanguage: ${targetLanguage}`,
+            `Start - word: "${originalInput}", learningLanguage: ${learningLanguage}`,
             { traceId },
         )
 
@@ -74,12 +87,9 @@ export async function POST(request: NextRequest) {
             )
         }
 
-        if (
-            !targetLanguage ||
-            (targetLanguage !== 'pt' && targetLanguage !== 'en')
-        ) {
+        if (learningLanguage !== 'pt-BR' && learningLanguage !== 'en') {
             return NextResponse.json(
-                { error: 'targetLanguage (pt or en) is required' },
+                { error: 'learningLanguage (pt-BR or en) is required' },
                 { status: 400 },
             )
         }
@@ -88,11 +98,14 @@ export async function POST(request: NextRequest) {
         step = 'openai_before'
         logger.info(
             'ADD_WORD',
-            `OpenAI before - model: gpt-4o-mini, word: "${originalInput}"`,
+            `OpenAI before - model: gpt-4o-mini, word: "${originalInput}", learningLanguage: ${learningLanguage}`,
             { traceId },
         )
 
-        const openaiResponse = await analyzeWord(originalInput)
+        const openaiResponse = await analyzeWord(
+            originalInput,
+            learningLanguage,
+        )
 
         // Step 3: OpenAI - after call
         step = 'openai_after'
@@ -106,18 +119,34 @@ export async function POST(request: NextRequest) {
         })
 
         // Step 4: Compute final language + key
+        // The OpenAI response should already have the word in the learning language
+        // (translated if input was Russian or different language)
         step = 'compute_lang'
         let finalLanguage: 'pt' | 'en'
-        if (openaiResponse.detected_language === 'ru') {
-            finalLanguage = targetLanguage
-        } else if (
-            openaiResponse.detected_language === 'pt' ||
-            openaiResponse.detected_language === 'en'
-        ) {
-            finalLanguage = openaiResponse.detected_language
+
+        // Map learning language to Notion format (pt-BR -> pt)
+        if (learningLanguage === 'pt-BR') {
+            finalLanguage = 'pt'
         } else {
-            throw new Error(
-                `Unsupported detected language: ${openaiResponse.detected_language}`,
+            finalLanguage = 'en'
+        }
+
+        // Verify detected language matches learning language (after translation)
+        // OpenAI should return detected_language as 'pt' for pt-BR or 'en' for English
+        const expectedDetectedLang = learningLanguage === 'pt-BR' ? 'pt' : 'en'
+        if (
+            openaiResponse.detected_language !== 'ru' &&
+            openaiResponse.detected_language !== expectedDetectedLang
+        ) {
+            // Log warning but continue - OpenAI may have detected the original input language
+            logger.info(
+                'ADD_WORD',
+                'Detected language mismatch (expected after translation)',
+                {
+                    traceId,
+                    expected: expectedDetectedLang,
+                    detected: openaiResponse.detected_language,
+                },
             )
         }
 
@@ -257,7 +286,7 @@ export async function POST(request: NextRequest) {
             message,
             key: dedupKey,
             finalWord,
-            lang: finalLanguage,
+            lang: finalLanguage, // 'pt' or 'en' (Notion format)
             pos: openaiResponse.pos,
             pageId,
         }

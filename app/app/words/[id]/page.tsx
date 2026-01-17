@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation'
 import { PageHeader } from '@/app/ui/PageHeader'
 import { Card } from '@/app/ui/Card'
 import { Tag } from '@/app/ui/Tag'
+import { LanguageDropdown } from '@/app/ui/LanguageDropdown'
 import { NotionWord } from '@/lib/types'
 import { apiFetch } from '@/lib/client'
 
@@ -38,8 +39,12 @@ export default function WordDetailPage() {
 
     if (loading) {
         return (
-            <div className="max-w-2xl mx-auto px-4 py-8">
-                <PageHeader title="Word Details" backHref="/app/words" />
+            <div className="min-h-[100dvh] max-w-2xl mx-auto px-4 py-8">
+                <PageHeader
+                    title="Word Details"
+                    backHref="/app/words"
+                    actions={<LanguageDropdown />}
+                />
                 <div className="text-center py-8 text-muted-foreground">
                     Loading...
                 </div>
@@ -49,8 +54,12 @@ export default function WordDetailPage() {
 
     if (error || !word) {
         return (
-            <div className="max-w-2xl mx-auto px-4 py-8">
-                <PageHeader title="Word Details" backHref="/app/words" />
+            <div className="min-h-[100dvh] max-w-2xl mx-auto px-4 py-8">
+                <PageHeader
+                    title="Word Details"
+                    backHref="/app/words"
+                    actions={<LanguageDropdown />}
+                />
                 <Card className="bg-error-background border-error-border text-error-text">
                     {error || 'Word not found'}
                 </Card>
@@ -59,8 +68,12 @@ export default function WordDetailPage() {
     }
 
     return (
-        <div className="max-w-2xl mx-auto px-4 py-8">
-            <PageHeader title="Word Details" backHref="/app/words" />
+        <div className="min-h-[100dvh] max-w-2xl mx-auto px-4 py-8">
+            <PageHeader
+                title="Word Details"
+                backHref="/app/words"
+                actions={<LanguageDropdown />}
+            />
 
             <Card className="mb-6">
                 <div className="flex items-start justify-between gap-4 mb-4">

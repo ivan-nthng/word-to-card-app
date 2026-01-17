@@ -67,7 +67,7 @@ export interface NotionWord {
 
 export interface AddWordRequest {
     word: string
-    targetLanguage: 'pt' | 'en'
+    learningLanguage: 'pt-BR' | 'en'
 }
 
 export interface AddWordResponse {

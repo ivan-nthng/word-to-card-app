@@ -18,7 +18,15 @@ const SYSTEM_PROMPT = `You are a linguistic analysis tool. Analyze the input wor
 
 const USER_PROMPT_TEMPLATE = (
     word: string,
-) => `Analyze the word "${word}" and return a JSON object with this exact structure:
+    learningLanguage?: 'pt-BR' | 'en',
+) => {
+    const translationNote = learningLanguage
+        ? `\nIMPORTANT: The user is learning ${
+              learningLanguage === 'pt-BR' ? 'Brazilian Portuguese' : 'English'
+          }. If the input word is in a different language, translate it to the learning language first, then analyze the translated word. Always return the word in the learning language in normalized fields.`
+        : ''
+
+    return `Analyze the word "${word}" and return a JSON object with this exact structure:
 {
   "detected_language": "pt|en|ru",
   "pos": "verb|noun|adjective|other",
@@ -47,16 +55,23 @@ Rules:
 - verb forms: only fill if detected_language is "pt" and pos is "verb"
 - confidence: number between 0.0 and 1.0
 - All keys must exist; use empty strings for missing values
-- Typo correction: If you detect a typo or misspelling, correct it in the normalized fields. The normalized fields should always contain the corrected, dictionary-correct form of the word.`
+- Typo correction: If you detect a typo or misspelling, correct it in the normalized fields. The normalized fields should always contain the corrected, dictionary-correct form of the word.${translationNote}`
+}
 
-export async function analyzeWord(word: string): Promise<OpenAIResponse> {
+export async function analyzeWord(
+    word: string,
+    learningLanguage?: 'pt-BR' | 'en',
+): Promise<OpenAIResponse> {
     try {
         const openai = getOpenAI()
         const response = await openai.chat.completions.create({
             model: 'gpt-4o-mini',
             messages: [
                 { role: 'system', content: SYSTEM_PROMPT },
-                { role: 'user', content: USER_PROMPT_TEMPLATE(word) },
+                {
+                    role: 'user',
+                    content: USER_PROMPT_TEMPLATE(word, learningLanguage),
+                },
             ],
             response_format: { type: 'json_object' },
             temperature: 0.3,

@@ -1,16 +1,23 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
-import { PageHeader } from '@/app/ui/PageHeader'
-import { Input } from '@/app/ui/Input'
 import { Button } from '@/app/ui/Button'
 import { Card } from '@/app/ui/Card'
 import { apiFetch } from '@/lib/client'
+import {
+    getLearningLanguageClient,
+    type LearningLanguage,
+} from '@/lib/learning-language'
+import { useRouter } from 'next/navigation'
 
 export default function AddWordPage() {
+    const router = useRouter()
+    const inputRef = useRef<HTMLInputElement>(null)
     const [word, setWord] = useState('')
-    const [targetLanguage, setTargetLanguage] = useState<'pt' | 'en'>('pt')
+    const [learningLanguage, setLearningLanguage] = useState<LearningLanguage>(
+        getLearningLanguageClient(),
+    )
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState('')
     const [result, setResult] = useState<{
@@ -21,13 +28,34 @@ export default function AddWordPage() {
         lang: 'pt' | 'en'
         pos: 'verb' | 'noun' | 'adjective' | 'other'
         pageId: string
+        translation?: string
+        typo?: string
     } | null>(null)
 
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault()
+    // Check learning language on mount
+    useEffect(() => {
+        const lang = getLearningLanguageClient()
+        if (!lang) {
+            // If no language selected, redirect to landing page
+            router.push('/')
+            return
+        }
+        setLearningLanguage(lang)
+    }, [router])
+
+    const handleSubmit = async () => {
+        if (!word.trim() || loading) return
+
         setLoading(true)
         setError('')
         setResult(null)
+
+        const currentLang = getLearningLanguageClient()
+        if (!currentLang) {
+            setError('Please select a learning language first')
+            setLoading(false)
+            return
+        }
 
         try {
             const data = await apiFetch<{
@@ -38,114 +66,160 @@ export default function AddWordPage() {
                 lang: 'pt' | 'en'
                 pos: 'verb' | 'noun' | 'adjective' | 'other'
                 pageId: string
+                translation?: string
+                typo?: string
             }>('/api/add-word', {
                 method: 'POST',
                 body: JSON.stringify({
                     word,
-                    targetLanguage,
+                    learningLanguage: currentLang,
                 }),
             })
 
-            setResult(data)
+            // Fetch the word details to get translation and type
+            try {
+                const wordDetails = await apiFetch<{
+                    word: string
+                    translation: string
+                    typo: string
+                }>(`/api/words/${data.pageId}`)
+
+                setResult({
+                    ...data,
+                    translation: wordDetails.translation || '',
+                    typo: wordDetails.typo || '',
+                })
+            } catch {
+                // If fetching details fails, still show success without translation
+                setResult({
+                    ...data,
+                    translation: '',
+                    typo: '',
+                })
+            }
+            
+            // Clear input and refocus
             setWord('')
-            setTargetLanguage('pt')
+            setTimeout(() => {
+                inputRef.current?.focus()
+            }, 100)
         } catch (err: any) {
             setError(err.message || 'An error occurred')
+            // Keep input value on error
         } finally {
             setLoading(false)
         }
     }
 
+    // Focus input on mount
+    useEffect(() => {
+        inputRef.current?.focus()
+    }, [])
+
     return (
-        <div className="max-w-2xl mx-auto px-4 py-8">
-            <div className="flex items-center justify-between mb-6">
-                <h1 className="text-2xl font-bold text-foreground">Add Word</h1>
-                <Link href="/app/words">
-                    <Button variant="outline">View Words</Button>
+        <div className="min-h-[100dvh] flex flex-col">
+            {/* Back Button - Fixed at top */}
+            <div className="px-4 pt-4 pb-2">
+                <Link href="/app/words" className="inline-block">
+                    <Button variant="outline" className="px-3 py-2">
+                        ←
+                    </Button>
                 </Link>
             </div>
 
-            <Card className="mb-6">
-                <form onSubmit={handleSubmit} className="space-y-4">
-                    <Input
-                        label="Word"
-                        value={word}
-                        onChange={(e) => setWord(e.target.value)}
-                        required
-                        disabled={loading}
-                        placeholder="Enter a word or phrase"
-                    />
-
-                    <div>
-                        <label className="block text-sm font-medium mb-1 text-foreground">
-                            Target Language{' '}
-                            <span className="text-error">*</span>
-                        </label>
-                        <select
-                            value={targetLanguage}
-                            onChange={(e) =>
-                                setTargetLanguage(e.target.value as 'pt' | 'en')
-                            }
-                            className="w-full px-3 py-2 border border-border rounded-md bg-input text-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
-                            disabled={loading}
-                            required
-                        >
-                            <option value="pt">Portuguese (pt)</option>
-                            <option value="en">English (en)</option>
-                        </select>
+            {/* Centered Content Area */}
+            <div className="flex-1 flex items-center justify-center px-4 py-8">
+                <div className="w-full max-w-2xl">
+                    {/* Hero Input */}
+                    <div className="mb-6">
+                        <div className="relative">
+                            <input
+                                ref={inputRef}
+                                type="text"
+                                value={word}
+                                onChange={(e) => {
+                                    setWord(e.target.value)
+                                    setError('')
+                                    setResult(null)
+                                }}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter' && word.trim() && !loading) {
+                                        e.preventDefault()
+                                        handleSubmit()
+                                    }
+                                }}
+                                disabled={loading}
+                                placeholder="New Word"
+                                className="w-full text-2xl md:text-3xl font-medium text-foreground bg-transparent border-0 border-b-2 border-primary pb-2 focus:outline-none focus:border-primary/80 placeholder:text-muted-foreground disabled:opacity-50"
+                            />
+                        </div>
                     </div>
 
-                    {error && (
-                        <div className="p-3 bg-error-background border border-error-border rounded-md text-error-text text-sm">
-                            {error}
+                    {/* Add Word Button - shown only when input has text */}
+                    {word.trim() && (
+                        <div className="mb-6">
+                            <Button
+                                onClick={handleSubmit}
+                                disabled={loading || !word.trim()}
+                                variant="primary"
+                                className="w-full py-3 text-base font-medium flex items-center justify-center gap-2"
+                            >
+                                {loading ? (
+                                    <>
+                                        <span className="animate-spin">⏳</span>
+                                        <span>Processing...</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <span>+</span>
+                                        <span>Add Word</span>
+                                    </>
+                                )}
+                            </Button>
                         </div>
                     )}
 
-                    <Button type="submit" disabled={loading} className="w-full">
-                        {loading ? 'Processing...' : 'Add Word'}
-                    </Button>
-                </form>
-            </Card>
-
-            {result && (
-                <Card
-                    className={
-                        result.status === 'exists'
-                            ? 'bg-muted border-border'
-                            : result.status === 'updated'
-                            ? 'bg-success-background border-success-border'
-                            : 'bg-success-background border-success-border'
-                    }
-                >
-                    <h3
-                        className={`font-semibold mb-2 ${
-                            result.status === 'exists'
-                                ? 'text-foreground'
-                                : 'text-success-text'
-                        }`}
-                    >
-                        {result.message}
-                    </h3>
-                    <div
-                        className={`space-y-1 text-sm ${
-                            result.status === 'exists'
-                                ? 'text-muted-foreground'
-                                : 'text-success-text'
-                        }`}
-                    >
-                        <p>
-                            <strong>Word:</strong> {result.finalWord}
-                        </p>
-                        <p>
-                            <strong>Language:</strong>{' '}
-                            {result.lang.toUpperCase()}
-                        </p>
-                        <p>
-                            <strong>Part of Speech:</strong> {result.pos}
-                        </p>
-                    </div>
-                </Card>
-            )}
+                    {/* Result Panel */}
+                    {(result || error) && (
+                        <div className="mb-6">
+                            {result && result.status !== 'exists' && (
+                                <Card className="bg-success-background border-success-border border-2 rounded-lg p-4 md:p-6">
+                                    <h3 className="text-lg md:text-xl font-bold text-success-text mb-4">
+                                        Word Successfully Added
+                                    </h3>
+                                    <div className="space-y-2 text-base md:text-lg text-success-text">
+                                        <p className="font-medium">{result.finalWord}</p>
+                                        {result.translation && (
+                                            <p className="text-success-text/90">
+                                                {result.translation}
+                                            </p>
+                                        )}
+                                        {result.typo && (
+                                            <p className="text-success-text/80 text-sm md:text-base capitalize">
+                                                {result.typo}
+                                            </p>
+                                        )}
+                                    </div>
+                                </Card>
+                            )}
+                            {error && (
+                                <Card className="bg-error-background border-error-border border-2 rounded-lg p-4 md:p-6">
+                                    <p className="text-base md:text-lg text-error-text font-medium">
+                                        {error}
+                                    </p>
+                                </Card>
+                            )}
+                            {result && result.status === 'exists' && (
+                                <Card className="bg-muted border-border rounded-lg p-4 md:p-6">
+                                    <p className="text-base md:text-lg text-foreground">
+                                        {result.message}
+                                    </p>
+                                </Card>
+                            )}
+                        </div>
+                    )}
+                </div>
+            </div>
         </div>
     )
 }

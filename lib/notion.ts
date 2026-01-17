@@ -972,15 +972,22 @@ export async function getDeckSummary(): Promise<DeckSummary[]> {
         const allWords = await getAllWords()
 
         // Build deck counts from all words
+        // Normalize Favorite deck name to canonical value
         const deckMap = new Map<string, { active: number; learned: number }>()
 
         for (const word of allWords) {
             for (const deckName of word.decks) {
-                if (!deckMap.has(deckName)) {
-                    deckMap.set(deckName, { active: 0, learned: 0 })
+                // Normalize Favorite deck name to canonical value
+                const normalizedName =
+                    deckName.toLowerCase() === 'favorite'
+                        ? FAVORITE_DECK_NAME
+                        : deckName
+
+                if (!deckMap.has(normalizedName)) {
+                    deckMap.set(normalizedName, { active: 0, learned: 0 })
                 }
 
-                const counts = deckMap.get(deckName)!
+                const counts = deckMap.get(normalizedName)!
                 if (word.learned) {
                     counts.learned++
                 } else {
@@ -1060,6 +1067,9 @@ export async function getWordById(pageId: string): Promise<NotionWord | null> {
 
 // Deck operations
 
+// Canonical Favorite deck name - must be consistent across all operations
+export const FAVORITE_DECK_NAME = 'Favorite'
+
 export async function addWordsToDeck(
     pageIds: string[],
     deckName: string,
@@ -1074,12 +1084,23 @@ export async function addWordsToDeck(
                 notion.pages.retrieve({ page_id: pageId }),
             )
             const props = (page as any).properties
-            const currentDecks =
+            let currentDecks =
                 props.Deck?.multi_select?.map((item: any) => item.name) || []
 
-            // Add deck name if not already present
-            if (!currentDecks.includes(deckName)) {
-                currentDecks.push(deckName)
+            // Normalize Favorite deck name to canonical value
+            const normalizedDeckName =
+                deckName.toLowerCase() === 'favorite'
+                    ? FAVORITE_DECK_NAME
+                    : deckName
+
+            // Remove any existing Favorite variants before adding canonical one
+            if (normalizedDeckName === FAVORITE_DECK_NAME) {
+                const filteredDecks = currentDecks.filter(
+                    (d: string) => d.toLowerCase() !== 'favorite',
+                )
+                currentDecks = [...filteredDecks, FAVORITE_DECK_NAME]
+            } else if (!currentDecks.includes(normalizedDeckName)) {
+                currentDecks = [...currentDecks, normalizedDeckName]
             }
 
             // Update with new deck list
@@ -1128,9 +1149,18 @@ export async function removeWordsFromDeck(
             const currentDecks =
                 props.Deck?.multi_select?.map((item: any) => item.name) || []
 
-            // Remove deck name
+            // Normalize Favorite deck name for comparison
+            const normalizedDeckName =
+                deckName.toLowerCase() === 'favorite'
+                    ? FAVORITE_DECK_NAME
+                    : deckName
+
+            // Remove deck name (case-insensitive for Favorite)
             const updatedDecks = currentDecks.filter(
-                (name: string) => name !== deckName,
+                (name: string) =>
+                    normalizedDeckName === FAVORITE_DECK_NAME
+                        ? name.toLowerCase() !== 'favorite'
+                        : name !== normalizedDeckName,
             )
 
             // Update with new deck list
